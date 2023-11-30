@@ -1,0 +1,143 @@
+# -----------------------------------------------------------------------------
+# This is an AWS Serverless Application Model (SAM) template
+# It defines the "stack" of AWS resources needed to run the SAM app
+# -----------------------------------------------------------------------------
+AWSTemplateFormatVersion: 2010-09-09
+
+# -----------------------------------------------------------------------------
+# This file is written in SAM syntax, and gets transfomed and expanded into a
+# CloudFormation template.  The CloudFormation template is what actually gets
+# deployed.  The main point is that SAM syntax is much simpler, with a lot less
+# boilerplate around declaring resources like Lambda functions and their
+# accompanying execution roles.
+# -----------------------------------------------------------------------------
+Transform: AWS::Serverless-2016-10-31
+
+# -----------------------------------------------------------------------------
+# This particular template defines website hosting for the Tacocat photo gallery
+# -----------------------------------------------------------------------------
+Description: Tacocat gallery static SPA website hosting
+
+# -----------------------------------------------------------------------------
+# Parameters that can be specified when deploying this stack
+# -----------------------------------------------------------------------------
+Parameters:
+  WebsiteDomain:
+    Type: String
+    Description: Domain name for the website
+    Default: staging-pix.tacocat.com # Will be set to pix.tacocat.com in samconfig.toml when deploying to prod
+  WebsiteDomainCertificateArn:
+    Type: String
+    Description: ARN of the Amazon Certificate Manager certificate for the website domain
+    Default: arn:aws:acm:us-east-1:010410881828:certificate/a85d1634-2234-4a5d-b59a-9a38e9ca7747 # Will be set to the prod ARN in samconfig.toml when deploying to prod
+
+# -----------------------------------------------------------------------------
+# Resources are the actual assets that will be provisioned on AWS
+# -----------------------------------------------------------------------------
+Resources:
+
+  # -----------------------------------------------------------------------------
+  # S3 bucket to host single page app (SPA) website
+  # -----------------------------------------------------------------------------
+  WebsiteBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-bucket"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - BucketKeyEnabled: true
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: Delete Old Versions
+            NoncurrentVersionExpirationInDays: 7 # delete old versions after a week
+            ExpiredObjectDeleteMarker: true
+            Status: Enabled
+  
+  WebsiteBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref WebsiteBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Id: PolicyForCloudFrontPrivateContent
+        Statement:
+        - Sid: AllowCloudFrontServicePrincipal
+          Effect: "Allow"
+          Principal:
+            Service: cloudfront.amazonaws.com
+          Action: s3:GetObject
+          Resource: !Sub "arn:aws:s3:::${WebsiteBucket}/*"
+          Condition:
+            StringEquals:
+              "AWS:SourceArn": !Join [ "", [ "arn:aws:cloudfront::", !Ref "AWS::AccountId", ":distribution/", !Ref CloudFrontDistribution ] ]
+  
+  # -----------------------------------------------------------------------------
+  # CloudFront Distribution for hosting the single page app website
+  # -----------------------------------------------------------------------------
+  CloudFrontDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: !Sub Static SPA website files for ${AWS::StackName}
+        DefaultRootObject: index.html
+        HttpVersion: http2
+        Aliases:
+        - !Ref WebsiteDomain
+        ViewerCertificate:
+          AcmCertificateArn: !Ref WebsiteDomainCertificateArn
+          SslSupportMethod: sni-only
+          MinimumProtocolVersion: TLSv1.2_2021
+        CustomErrorResponses:
+          - ErrorCode: 404
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+          - ErrorCode: 403
+            ResponseCode: 200
+            ResponsePagePath: /index.html
+        Origins:
+        - Id: S3Origin
+          DomainName: !GetAtt WebsiteBucket.RegionalDomainName
+          OriginAccessControlId: !GetAtt CloudFrontOriginAccessControl.Id
+          S3OriginConfig: 
+            OriginAccessIdentity: ""
+        DefaultCacheBehavior:
+          TargetOriginId: S3Origin
+          ViewerProtocolPolicy: redirect-to-https
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # CachingOptimized managed policy - use this if not using a custom ForwardedValues
+          AllowedMethods:
+          - GET
+          - HEAD
+          - OPTIONS
+          CachedMethods:
+          - GET
+          - HEAD
+          ForwardedValues:
+            QueryString: false
+            Cookies:
+              Forward: none
+
+  CloudFrontOriginAccessControl:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${WebsiteBucket} OAC"
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+# -----------------------------------------------------------------------------
+# Outputs
+# -----------------------------------------------------------------------------
+Outputs:
+  CloudFrontDistributionId:
+    Description: CloudFront Distribution ID for hosting web front end
+    Value: !Ref CloudFrontDistribution
+  CloudFrontDistributionDomainName:
+    Description: CloudFront Distribution Domain Name for accessing web front end
+    Value: !GetAtt CloudFrontDistribution.DomainName
+  WebS3BucketName:
+    Description: S3 Bucket for hosting web site
+    Value: !Ref WebsiteBucket

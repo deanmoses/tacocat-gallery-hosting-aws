@@ -1,0 +1,42 @@
+# The AWS Serverless Application Model (SAM) CLI configuration file
+version = 0.1
+
+[default]
+[default.global]
+[default.global.parameters]
+stack_name = "tacocat-gallery-website-hosting-dev"
+
+[prod]
+[prod.global]
+[prod.global.parameters]
+stack_name = "tacocat-gallery-website-hosting-prod"
+
+[default.validate.parameters]
+lint = true
+
+[default.build.parameters]
+cached = true
+parallel = true
+
+[default.package.parameters]
+resolve_s3 = true
+
+[default.sync.parameters]
+watch = true
+
+[default.local_start_api.parameters]
+warm_containers = "EAGER"
+
+[default.local_start_lambda.parameters]
+warm_containers = "EAGER"
+
+[default.deploy.parameters]
+s3_prefix = "tacocat-gallery-website-hosting/dev"
+resolve_s3 = true
+confirm_changeset = true
+region = "us-east-1"
+capabilities = "CAPABILITY_IAM"
+
+[prods.deploy.parameters]
+s3_prefix = "tacocat-gallery-website-hosting/prod"
+parameter_overrides = "Environment=prod WebsiteDomain=pix.tacocat.com WebsiteCertificateArn=arn:aws:acm:us-east-1:010410881828:certificate/d6f3970e-e2e2-4fa0-bf52-1332c7de1219"

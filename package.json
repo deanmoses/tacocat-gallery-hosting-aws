@@ -1,0 +1,13 @@
+{
+    "name": "tacocat-gallery-hosting-aws",
+    "version": "0.5",
+    "private": true,
+    "description": "AWS hosting infrastructure for the Tacocat photo gallery static SPA website",
+    "keywords": [
+        "aws",
+        "aws-s3",
+        "aws-cloudfront"
+    ],
+    "license": "MIT",
+    "author": "Dean Moses"
+}
