@@ -25,12 +25,30 @@ It's a little weird to use SAM because there's no code, no lambdas.  I'm using i
 - Clone this project from github
 - There's no dependencies to install and no code to build
 
-## Deploy
+## Deploy to dev
 
 ```bash
 sam validate # validates any changes you've made to template.yaml
+sam build # transforms the template
 sam deploy # deploys the infrastructure to AWS
 ```
 
 Then go to the project that builds the actual website assets and deploy it to this infrastructure.
 
+## Deploy to prod
+
+```bash
+sam deploy --config-env prod
+```
+
+This will change the name of the stack to `tacocat-gallery-website-hosting-prod` (look in `samconfig.toml` for how).  Changing the name of the stack will create an entirely new stack with different resources.
+
+## Cleanup
+
+To entirely delete the dev infrastructure from AWS:
+
+```bash
+sam delete
+```
+
+⚠️ :warning: There's a slight chance this _might_ delete the prod infrastructure, though I _think_ it'll hit dev.
