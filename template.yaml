@@ -29,7 +29,7 @@ Parameters:
   WebsiteDomainCertificateArn:
     Type: String
     Description: ARN of the Amazon Certificate Manager certificate for the website domain
-    Default: arn:aws:acm:us-east-1:010410881828:certificate/a85d1634-2234-4a5d-b59a-9a38e9ca7747 # Will be set to the prod ARN in samconfig.toml when deploying to prod
+    Default: arn:aws:acm:us-east-1:010410881828:certificate/092ab57c-f87d-4c44-a72c-63cfbbb55800 # Will be set to the prod ARN in samconfig.toml when deploying to prod
 
 # -----------------------------------------------------------------------------
 # Resources are the actual assets that will be provisioned on AWS
