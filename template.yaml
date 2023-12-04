@@ -90,6 +90,10 @@ Resources:
           AcmCertificateArn: !Ref WebsiteDomainCertificateArn
           SslSupportMethod: sni-only
           MinimumProtocolVersion: TLSv1.2_2021
+        # These custom error responses are needed to support single page apps
+        # When a user requests a path that doesn't physically exist such as
+        # /2001/12-31/, S3 will return a 404 (actually a 403).  This tells 
+        # CloudFront to return index.html instead of that error.
         CustomErrorResponses:
           - ErrorCode: 404
             ResponseCode: 200
@@ -103,8 +107,20 @@ Resources:
           OriginAccessControlId: !GetAtt CloudFrontOriginAccessControl.Id
           S3OriginConfig: 
             OriginAccessIdentity: ""
+        CacheBehaviors:
+          - PathPattern: /_app/immutable/*
+            TargetOriginId: S3Origin
+            Compress: true
+            ViewerProtocolPolicy: redirect-to-https
+            CachePolicyId: !Ref ImmutableCachePolicy
+            ResponseHeadersPolicyId: !Ref ImmutableResponseHeadersPolicy
+            ForwardedValues:
+              QueryString: false
+              Cookies:
+                Forward: none
         DefaultCacheBehavior:
           TargetOriginId: S3Origin
+          Compress: true
           ViewerProtocolPolicy: redirect-to-https
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # CachingOptimized managed policy - use this if not using a custom ForwardedValues
           AllowedMethods:
@@ -127,6 +143,40 @@ Resources:
         OriginAccessControlOriginType: s3
         SigningBehavior: always
         SigningProtocol: sigv4
+
+  # Set Cache-Control header to cache forever
+  ImmutableResponseHeadersPolicy:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties: 
+      ResponseHeadersPolicyConfig: 
+        Name: !Sub ImmutableResponseHeadersPolicy-${AWS::StackName}
+        Comment: !Sub Immutable response headers policy for ${AWS::StackName}
+        CustomHeadersConfig:
+          Items:
+            - Header: Cache-Control
+              Value: public, max-age=31536000, immutable
+              Override: true
+
+  # Caching policy to cache forever
+  ImmutableCachePolicy:
+    Type: AWS::CloudFront::CachePolicy
+    Properties:
+      CachePolicyConfig:
+        Name: !Sub ImmutableCachePolicy-${AWS::StackName}
+        Comment: Cache for a year
+        DefaultTTL: 31536000 # 1 year
+        MaxTTL: 31536000 # 1 year
+        MinTTL: 31536000 # 1 year
+        ParametersInCacheKeyAndForwardedToOrigin:
+          CookiesConfig:
+            CookieBehavior: none
+          EnableAcceptEncodingBrotli: true
+          EnableAcceptEncodingGzip: true
+          HeadersConfig:
+            HeaderBehavior: none
+          QueryStringsConfig:
+            QueryStringBehavior: none
+
 
 # -----------------------------------------------------------------------------
 # Outputs
