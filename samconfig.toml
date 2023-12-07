@@ -36,7 +36,19 @@ resolve_s3 = true
 confirm_changeset = true
 region = "us-east-1"
 capabilities = "CAPABILITY_IAM"
+parameter_overrides = [
+    "GalleryAppDomain=staging-pix.tacocat.com",
+    "DomainCertificateArn=arn:aws:acm:us-east-1:010410881828:certificate/092ab57c-f87d-4c44-a72c-63cfbbb55800",
+]
 
 [prods.deploy.parameters]
 s3_prefix = "tacocat-gallery-website-hosting/prod"
-parameter_overrides = "Environment=prod WebsiteDomain=pix.tacocat.com WebsiteCertificateArn=arn:aws:acm:us-east-1:010410881828:certificate/d6f3970e-e2e2-4fa0-bf52-1332c7de1219"
+resolve_s3 = true
+confirm_changeset = true
+region = "us-east-1"
+image_repositories = []
+capabilities = "CAPABILITY_IAM"
+parameter_overrides = [
+    "GalleryAppDomain=pix.tacocat.com",
+    "DomainCertificateArn=arn:aws:acm:us-east-1:010410881828:certificate/e142cda0-96db-4651-92fd-35dd9a52e9a2",
+]

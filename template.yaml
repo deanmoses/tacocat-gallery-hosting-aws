@@ -22,14 +22,18 @@ Description: Tacocat gallery static SPA website hosting
 # Parameters that can be specified when deploying this stack
 # -----------------------------------------------------------------------------
 Parameters:
-  WebsiteDomain:
+  GalleryAppDomain:
+    Description: Domain of the Tacocat photo gallery web app 
     Type: String
-    Description: Domain name for the website
-    Default: staging-pix.tacocat.com # Will be set to pix.tacocat.com in samconfig.toml when deploying to prod
-  WebsiteDomainCertificateArn:
+    AllowedValues:
+      - staging-pix.tacocat.com
+      - pix.tacocat.com
+  DomainCertificateArn:
+    Description: ARN of the ACM certificate for the GalleryAppDomain domain
     Type: String
-    Description: ARN of the Amazon Certificate Manager certificate for the website domain
-    Default: arn:aws:acm:us-east-1:010410881828:certificate/092ab57c-f87d-4c44-a72c-63cfbbb55800 # Will be set to the prod ARN in samconfig.toml when deploying to prod
+    AllowedValues:
+      - arn:aws:acm:us-east-1:010410881828:certificate/092ab57c-f87d-4c44-a72c-63cfbbb55800 # staging-pix.tacocat.com
+      - arn:aws:acm:us-east-1:010410881828:certificate/e142cda0-96db-4651-92fd-35dd9a52e9a2 # pix.tacocat.com
 
 # -----------------------------------------------------------------------------
 # Resources are the actual assets that will be provisioned on AWS
@@ -42,7 +46,7 @@ Resources:
   WebsiteBucket:
     Type: AWS::S3::Bucket
     Properties:
-      BucketName: !Sub "${AWS::StackName}-bucket"
+      BucketName: !Sub ${AWS::StackName}-bucket
       BucketEncryption:
         ServerSideEncryptionConfiguration:
           - BucketKeyEnabled: true
@@ -68,7 +72,7 @@ Resources:
           Principal:
             Service: cloudfront.amazonaws.com
           Action: s3:GetObject
-          Resource: !Sub "arn:aws:s3:::${WebsiteBucket}/*"
+          Resource: !Sub arn:aws:s3:::${WebsiteBucket}/*
           Condition:
             StringEquals:
               "AWS:SourceArn": !Join [ "", [ "arn:aws:cloudfront::", !Ref "AWS::AccountId", ":distribution/", !Ref CloudFrontDistribution ] ]
@@ -85,9 +89,9 @@ Resources:
         DefaultRootObject: index.html
         HttpVersion: http2
         Aliases:
-        - !Ref WebsiteDomain
+        - !Ref GalleryAppDomain
         ViewerCertificate:
-          AcmCertificateArn: !Ref WebsiteDomainCertificateArn
+          AcmCertificateArn: !Ref DomainCertificateArn
           SslSupportMethod: sni-only
           MinimumProtocolVersion: TLSv1.2_2021
         # These custom error responses are needed to support single page apps
@@ -139,7 +143,7 @@ Resources:
     Type: AWS::CloudFront::OriginAccessControl
     Properties:
       OriginAccessControlConfig:
-        Name: !Sub "${WebsiteBucket} OAC"
+        Name: !Sub ${WebsiteBucket}-origin-access-control
         OriginAccessControlOriginType: s3
         SigningBehavior: always
         SigningProtocol: sigv4
