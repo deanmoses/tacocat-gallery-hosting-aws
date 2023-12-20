@@ -41,7 +41,7 @@ parameter_overrides = [
     "DomainCertificateArn=arn:aws:acm:us-east-1:010410881828:certificate/092ab57c-f87d-4c44-a72c-63cfbbb55800",
 ]
 
-[prods.deploy.parameters]
+[prod.deploy.parameters]
 s3_prefix = "tacocat-gallery-website-hosting/prod"
 resolve_s3 = true
 confirm_changeset = true
