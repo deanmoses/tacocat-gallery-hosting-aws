@@ -40,6 +40,16 @@ Parameters:
 # -----------------------------------------------------------------------------
 Resources:
 
+  RobotsTxtFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: !Sub ${AWS::StackName}-robots-txt-handler
+      AutoPublish: true
+      FunctionCode: ./cloudfront-functions/robots-txt-handler.js
+      FunctionConfig:
+        Comment: "Returns a 404 for robots.txt"
+        Runtime: cloudfront-js-2.0
+
   # -----------------------------------------------------------------------------
   # S3 bucket to host single page app (SPA) website
   # -----------------------------------------------------------------------------
@@ -122,6 +132,25 @@ Resources:
               QueryString: false
               Cookies:
                 Forward: none
+          - PathPattern: "/robots.txt"
+            TargetOriginId: S3Origin
+            Compress: true
+            ViewerProtocolPolicy: redirect-to-https
+            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # CachingOptimized managed policy - use this if not using a custom ForwardedValues
+            AllowedMethods:
+              - GET
+              - HEAD
+              - OPTIONS
+            CachedMethods:
+              - GET
+              - HEAD
+            ForwardedValues:
+              QueryString: false
+              Cookies:
+                Forward: none
+            FunctionAssociations:
+              - EventType: viewer-request
+                FunctionARN: !GetAtt RobotsTxtFunction.Arn
         DefaultCacheBehavior:
           TargetOriginId: S3Origin
           Compress: true
