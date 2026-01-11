@@ -38,7 +38,7 @@ One sentence describing the overall change.
 
 ## Labels
 
-Apply all labels that fit:
+Apply labels using `gh pr create --label <label>` or `gh pr edit --add-label <label>`:
 
 - `enhancement` - User-facing features or improvements (must change production code behavior)
 - `refactor` - Production code changes that don't alter behavior

@@ -40,12 +40,36 @@ Parameters:
 # -----------------------------------------------------------------------------
 Resources:
 
+  # CloudFront Function to return 404 for robots.txt
+  # The actual SPA prevents indexing via <meta name="robots" content="noindex"> in the HTML.
+  # This function ensures crawlers get a proper 404 instead of index.html with a 200.
+  # FunctionCode must be inline - CloudFormation doesn't support external file references.
   RobotsTxtFunction:
     Type: AWS::CloudFront::Function
     Properties:
       Name: !Sub ${AWS::StackName}-robots-txt-handler
       AutoPublish: true
-      FunctionCode: ./cloudfront-functions/robots-txt-handler.js
+      FunctionCode: |
+        function handler(event) {
+          var request = event.request;
+          var uri = request.uri;
+
+          if (uri === '/robots.txt') {
+            return {
+              statusCode: 404,
+              statusDescription: 'Not Found',
+              headers: {
+                'content-type': { value: 'text/plain' }
+              },
+              body: {
+                encoding: 'text',
+                data: 'Not Found'
+              }
+            };
+          }
+
+          return request;
+        }
       FunctionConfig:
         Comment: "Returns a 404 for robots.txt"
         Runtime: cloudfront-js-2.0
@@ -142,7 +166,7 @@ Resources:
               - HEAD
             FunctionAssociations:
               - EventType: viewer-request
-                FunctionARN: !GetAtt RobotsTxtFunction.FunctionARN
+                FunctionARN: !GetAtt RobotsTxtFunction.FunctionMetadata.FunctionARN
         DefaultCacheBehavior:
           TargetOriginId: S3Origin
           Compress: true
