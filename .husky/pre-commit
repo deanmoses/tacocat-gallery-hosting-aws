@@ -1,0 +1,11 @@
+set -e
+
+# Validate SAM template
+sam validate
+
+# Scan for secrets (requires installing gitleaks)
+if command -v gitleaks &> /dev/null; then
+    gitleaks protect --staged --no-banner
+else
+    echo "Warning: gitleaks not installed, skipping secret scan"
+fi

@@ -1,0 +1,94 @@
+name: Deploy to Production
+
+on:
+    workflow_dispatch:
+
+concurrency:
+    group: deploy-production
+    cancel-in-progress: false
+
+env:
+    HUSKY: 0 # Skip git hooks in CI
+
+jobs:
+    build-and-validate:
+        uses: ./.github/workflows/build-and-validate.yml
+        secrets: inherit
+
+    deploy:
+        needs: build-and-validate
+        runs-on: ubuntu-latest
+        timeout-minutes: 30
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Setup AWS SAM CLI
+              uses: aws-actions/setup-sam@v2
+              with:
+                  use-installer: true
+
+            - name: SAM build
+              run: sam build
+
+            - name: Configure AWS credentials
+              uses: aws-actions/configure-aws-credentials@v4
+              with:
+                  aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+                  aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+                  aws-region: us-east-1
+
+            - name: Deploy to production
+              run: sam deploy --config-env prod --no-confirm-changeset --no-fail-on-empty-changeset
+
+    test:
+        needs: deploy
+        runs-on: ubuntu-latest
+        timeout-minutes: 10
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Run integration tests
+              run: ./scripts/integration-tests.sh pix.tacocat.com
+
+    create-release:
+        needs: test
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        permissions:
+            contents: write
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: Create release tag
+              id: tag
+              run: |
+                  set -e
+                  year=$(date +%Y)
+                  latest_tag=$(git tag -l "${year}v*" | sort -V | tail -n1)
+                  if [ -z "$latest_tag" ]; then
+                      new_tag="${year}v1"
+                  else
+                      version_num=${latest_tag#"${year}"v}
+                      new_version=$((version_num + 1))
+                      new_tag="${year}v${new_version}"
+                  fi
+                  echo "Creating tag: $new_tag"
+                  echo "tag=$new_tag" >> $GITHUB_OUTPUT
+                  git config user.name "github-actions[bot]"
+                  git config user.email "github-actions[bot]@users.noreply.github.com"
+                  git tag -a "$new_tag" -m "Production release $new_tag"
+                  git push origin "$new_tag"
+
+            - name: Create GitHub Release
+              uses: softprops/action-gh-release@v2
+              with:
+                  tag_name: ${{ steps.tag.outputs.tag }}
+                  name: ${{ steps.tag.outputs.tag }}
+                  generate_release_notes: true
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

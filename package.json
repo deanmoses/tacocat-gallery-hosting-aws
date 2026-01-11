@@ -9,5 +9,11 @@
         "aws-cloudfront"
     ],
     "license": "MIT",
-    "author": "Dean Moses"
+    "author": "Dean Moses",
+    "scripts": {
+        "prepare": "husky"
+    },
+    "devDependencies": {
+        "husky": "^9.1.7"
+    }
 }

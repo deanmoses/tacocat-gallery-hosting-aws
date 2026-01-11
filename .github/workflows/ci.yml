@@ -1,0 +1,57 @@
+name: CI
+
+on:
+    push:
+        branches: [main]
+        paths-ignore:
+            - '*.md'
+            - 'LICENSE'
+            - '.gitignore'
+    pull_request:
+        branches: [main]
+        paths-ignore:
+            - '*.md'
+            - 'LICENSE'
+            - '.gitignore'
+
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+
+env:
+    HUSKY: 0 # Skip git hooks in CI
+
+jobs:
+    build-and-validate:
+        uses: ./.github/workflows/build-and-validate.yml
+        secrets: inherit
+
+    deploy:
+        needs: build-and-validate
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        runs-on: ubuntu-latest
+        timeout-minutes: 20
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Setup AWS SAM CLI
+              uses: aws-actions/setup-sam@v2
+              with:
+                  use-installer: true
+
+            - name: SAM build
+              run: sam build
+
+            - name: Configure AWS credentials
+              uses: aws-actions/configure-aws-credentials@v4
+              with:
+                  aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+                  aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+                  aws-region: us-east-1
+
+            - name: Deploy to staging
+              run: sam deploy --no-confirm-changeset --no-fail-on-empty-changeset
+
+            - name: Run integration tests
+              run: ./scripts/integration-tests.sh staging-pix.tacocat.com

@@ -119,8 +119,6 @@ Resources:
         - Id: S3Origin
           DomainName: !GetAtt WebsiteBucket.RegionalDomainName
           OriginAccessControlId: !GetAtt CloudFrontOriginAccessControl.Id
-          S3OriginConfig: 
-            OriginAccessIdentity: ""
         CacheBehaviors:
           - PathPattern: /_app/immutable/*
             TargetOriginId: S3Origin
@@ -128,15 +126,11 @@ Resources:
             ViewerProtocolPolicy: redirect-to-https
             CachePolicyId: !Ref ImmutableCachePolicy
             ResponseHeadersPolicyId: !Ref ImmutableResponseHeadersPolicy
-            ForwardedValues:
-              QueryString: false
-              Cookies:
-                Forward: none
           - PathPattern: "/robots.txt"
             TargetOriginId: S3Origin
             Compress: true
             ViewerProtocolPolicy: redirect-to-https
-            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # CachingOptimized managed policy - use this if not using a custom ForwardedValues
+            CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # CachingOptimized managed policy
             AllowedMethods:
               - GET
               - HEAD
@@ -144,18 +138,14 @@ Resources:
             CachedMethods:
               - GET
               - HEAD
-            ForwardedValues:
-              QueryString: false
-              Cookies:
-                Forward: none
             FunctionAssociations:
               - EventType: viewer-request
-                FunctionARN: !GetAtt RobotsTxtFunction.Arn
+                FunctionARN: !GetAtt RobotsTxtFunction.FunctionARN
         DefaultCacheBehavior:
           TargetOriginId: S3Origin
           Compress: true
           ViewerProtocolPolicy: redirect-to-https
-          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # CachingOptimized managed policy - use this if not using a custom ForwardedValues
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # CachingOptimized managed policy
           AllowedMethods:
           - GET
           - HEAD
@@ -163,10 +153,6 @@ Resources:
           CachedMethods:
           - GET
           - HEAD
-          ForwardedValues:
-            QueryString: false
-            Cookies:
-              Forward: none
 
   CloudFrontOriginAccessControl:
     Type: AWS::CloudFront::OriginAccessControl
