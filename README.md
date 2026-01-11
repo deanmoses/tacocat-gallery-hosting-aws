@@ -18,37 +18,63 @@ It's a little weird to use SAM because there's no code, no lambdas.  I'm using i
 ## Prerequisites
 
 - The AWS Serverless Application Model Command Line Interface (SAM CLI)
-- Node.js 18 or higher
+- Node.js
 
 ## Install
 
 - Clone this project from github
-- There's no dependencies to install and no code to build
-
-## Deploy to dev
+- Install deps:
 
 ```bash
-sam validate # validates any changes you've made to template.yaml
-sam build # transforms the template
-sam deploy # deploys the infrastructure to AWS
+npm install
 ```
 
-Then go to the project that builds the actual website assets and deploy it to this infrastructure.
+## Develop
+The main 'development' is editing the AWS infrastructure (`template.yaml`):
+
+When you make changes to the template:
+```bash
+sam validate        # Validates any changes you've made to the SAM template.yaml
+sam build           # Transform the template
+```
+
+## Deploying to dev
+
+Dev/staging hosts the files of <https://staging-pix.tacocat.com>.  
+
+To deploy:
+```bash
+sam sync          # Re-deploy the stack to dev/staging
+```
+
+After deploying, you can either:
+- Hit <https://staging-pix.tacocat.com> and validate that the web app is still being served correctly.
+- Go the project that builds the actual website assets and deploy it to this infrastructure.
+- Run integration tests:
+
+```bash
+./scripts/integration-tests.sh # Run integration tests against dev/staging
+```
+
+There are no unit tests.
+
+## Committing & PRs
+You must submit a PR to change main.
+
+- Committing will:
+  - Run precommit checks, like a secret scanner, linter, and SAM template validation.
+- Merging a PR will:
+  -  Deploy to dev / staging
+  -  Run integration tests
 
 ## Deploy to prod
 
-```bash
-sam deploy --config-env prod
-```
+Prod hosts the files of <https://pix.tacocat.com>
 
-This will change the name of the stack to `tacocat-gallery-website-hosting-prod` (look in `samconfig.toml` for how).  Changing the name of the stack will create an entirely new stack with different resources.
-
-## Cleanup
-
-To entirely delete the dev infrastructure from AWS:
-
-```bash
-sam delete
-```
-
-⚠️ :warning: There's a slight chance this _might_ delete the prod infrastructure, though I _think_ it'll hit dev.
+- Use the `Deploy to Production` GitHub Action to deploy to prod.  This will:
+  - Deploy to prod
+  - Run integration tests
+  - Create a release tag and release on GitHub 
+- Then you can either:
+  - Hit <https://pix.tacocat.com> and validate that the web app is still being served correctly.
+  - Go to the project that builds the actual website assets and deploy it to this infrastructure.

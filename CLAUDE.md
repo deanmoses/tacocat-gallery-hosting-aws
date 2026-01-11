@@ -12,7 +12,8 @@ This is an AWS SAM infrastructure-only project that defines hosting for the Taco
 npm install         # Install husky (first time setup)
 sam validate        # Validate template.yaml syntax
 sam build           # Transform the SAM template
-sam deploy          # Deploy to dev (staging-pix.tacocat.com)
+sam sync            # Deploys to dev / staging (hosts the files of staging-pix.tacocat.com)
+
 ```
 
 Production deployments are done via GitHub Actions (manual trigger).
@@ -36,9 +37,8 @@ Production deployments are done via GitHub Actions (manual trigger).
 
 ## Key Files
 
-- `template.yaml` - All AWS resources (S3, CloudFront, policies)
+- `template.yaml` - All AWS resources (S3, CloudFront, policies, inline CloudFront Function for robots.txt)
 - `samconfig.toml` - SAM CLI config with dev/prod parameters
-- `cloudfront-functions/robots-txt-handler.js` - Edge function returning 404 for robots.txt
 
 ## CI/CD
 
