@@ -119,6 +119,8 @@ Resources:
         - Id: S3Origin
           DomainName: !GetAtt WebsiteBucket.RegionalDomainName
           OriginAccessControlId: !GetAtt CloudFrontOriginAccessControl.Id
+          S3OriginConfig:
+            OriginAccessIdentity: ""
         CacheBehaviors:
           - PathPattern: /_app/immutable/*
             TargetOriginId: S3Origin
