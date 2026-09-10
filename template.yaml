@@ -121,7 +121,7 @@ Resources:
         Enabled: true
         Comment: !Sub Static SPA website files for ${AWS::StackName}
         DefaultRootObject: index.html
-        HttpVersion: http2
+        HttpVersion: http2and3
         Aliases:
         - !Ref GalleryAppDomain
         ViewerCertificate:
