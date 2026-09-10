@@ -58,6 +58,24 @@ else
     FAILED=1
 fi
 
+# Test 5: Immutable assets have correct cache headers
+echo -n "Test: Immutable assets have 1-year cache headers... "
+# Fetch homepage and extract an immutable asset URL
+HOMEPAGE=$(curl $CURL_OPTS "https://$DOMAIN/")
+IMMUTABLE_PATH=$(echo "$HOMEPAGE" | grep -oE '/_app/immutable/[^"]+' | head -1)
+if [ -z "$IMMUTABLE_PATH" ]; then
+    echo -e "${RED}FAIL (homepage references no /_app/immutable/ assets)${NC}"
+    FAILED=1
+else
+    CACHE_HEADER=$(curl $CURL_OPTS -I "https://$DOMAIN$IMMUTABLE_PATH" | grep -i "cache-control" | tr -d '\r')
+    if echo "$CACHE_HEADER" | grep -q "max-age=31536000" && echo "$CACHE_HEADER" | grep -q "immutable"; then
+        echo -e "${GREEN}PASS${NC}"
+    else
+        echo -e "${RED}FAIL (got: $CACHE_HEADER)${NC}"
+        FAILED=1
+    fi
+fi
+
 echo "================================================="
 if [ "$FAILED" = "1" ]; then
     echo -e "${RED}Some tests FAILED${NC}"
