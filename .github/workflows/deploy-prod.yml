@@ -78,7 +78,7 @@ jobs:
                       new_tag="${year}v${new_version}"
                   fi
                   echo "Creating tag: $new_tag"
-                  echo "tag=$new_tag" >> $GITHUB_OUTPUT
+                  echo "tag=$new_tag" >> "$GITHUB_OUTPUT"
                   git config user.name "github-actions[bot]"
                   git config user.email "github-actions[bot]@users.noreply.github.com"
                   git tag -a "$new_tag" -m "Production release $new_tag"

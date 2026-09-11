@@ -4,41 +4,41 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is an AWS SAM infrastructure-only project that defines hosting for the Tacocat photo gallery SPA. It contains no application code—just CloudFormation/SAM templates that provision AWS resources. The actual website is deployed separately to this infrastructure.
+This is an AWS SAM infrastructure-only project that defines hosting for the Tacocat photo gallery SPA. It contains no application code, just a CloudFormation/SAM template that provision AWS resources. The actual website is deployed separately to this infrastructure.  The ecosystem is described in the `tacocat-gallery-sveltekit` project's `docs/Ecosystem.md`.
 
 ## Commands
 
 ```bash
 npm install         # Install husky (first time setup)
 sam validate        # Validate template.yaml syntax
+./scripts/lint.sh   # Full lint suite (cfn-lint, CloudFront Function JS, shellcheck, actionlint)
 sam build           # Transform the SAM template
 sam sync            # Deploys to dev / staging (hosts the files of staging-pix.tacocat.com)
 
 ```
 
-Production deployments are done via GitHub Actions (manual trigger).
-
 ## Architecture
 
-**S3 + CloudFront static SPA hosting:**
+### S3 + CloudFront static SPA hosting
+
 - S3 bucket stores static assets (HTML, CSS, JS, images)
 - CloudFront distribution serves content with HTTPS
 - Origin Access Control (OAC) restricts S3 access to CloudFront only
 - Custom error responses return index.html for SPA routing (404/403 → 200 with index.html)
-- CloudFront standard logs (v2) delivered to a dedicated S3 bucket, expiring after 90 days (see Observability)
+- Access logs delivered to a dedicated S3 bucket, expiring after 90 days (see Observability)
+- `X-Robots-Tag` and `tdm-reservation` response headers opt out of indexing and AI training
+- HSTS (1 year, `includeSubDomains`, no preload), `nosniff`, `Referrer-Policy`, `X-Frame-Options: DENY` and `Permissions-Policy`. `includeSubDomains` binds `img.`/`api.`/`auth.` — a new subdomain must be HTTPS from day one
 
-**Cache behaviors:**
-- `/_app/immutable/*` - 1-year cache with immutable headers (SvelteKit build output)
-- `/robots.txt` - Intercepted by CloudFront Function to return 404
-- Default - Standard CloudFront caching
+### Cache behaviors
 
-**Environments:**
+- `/_app/immutable/*`: 1-year cache with immutable headers (SvelteKit build output)
+- `/robots.txt`: Served by CloudFront Function
+- Default: Standard CloudFront caching
+
+### Environments
+
 - Dev stack: `tacocat-gallery-website-hosting-dev` → staging-pix.tacocat.com
 - Prod stack: `tacocat-gallery-website-hosting-prod` → pix.tacocat.com
-
-## Observability
-
-The distribution writes CloudFront standard logs (v2) to `<stack-name>-cloudfront-logs` under `AWSLogs/<account>/CloudFront/spa/YYYY/MM/DD/`, tab-separated with a `#Fields` header, expiring after 90 days. Delivery lags requests by ten minutes to a few hours. The bucket is retained on stack deletion in prod only. Uptime and alarms are covered in the `tacocat-gallery-sveltekit` repo's `docs/Observability.md`.
 
 ## Key Files
 
@@ -47,7 +47,10 @@ The distribution writes CloudFront standard logs (v2) to `<stack-name>-cloudfron
 
 ## CI/CD
 
-- **Pre-commit hooks**: Husky runs sam validate and gitleaks (secret scanning) on commit.
-- **CI workflow**: On PR and push to main, runs SAM validate, build, and changeset validation. On push to main, also deploys to staging and runs integration tests.
-- **Production deploy**: Manual workflow dispatch from GitHub Actions. Deploys to prod, runs integration tests, creates a release tag (YYYYvN format), and generates release notes.
+- **Pre-commit hooks**: Husky runs `scripts/lint.sh` and gitleaks secret scanning on commit.
+- **CI workflow**: on PR and push to main, runs lint, build, and changeset validation. On push to main, also deploys to staging and runs integration tests.
+- **Production deploy**: production deployments are done by manually triggering a GitHub Action.  Deploys to prod, runs integration tests, creates a release tag and generates release notes.
 
+## Observability
+
+Logging is configured through CloudWatch Logs delivery resources in `template.yaml`, not the distribution's own `Logging` block, so `aws cloudfront get-distribution-config` and the console both report logging disabled while logs are flowing — `aws logs describe-delivery-sources` is what answers that. Delivery lags requests by ten minutes to a few hours.
