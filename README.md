@@ -6,7 +6,9 @@ It does NOT contain the actual website itself.  That's a separate project that d
 
 ## Key services
 
-The SPA's static file assets are stored in an Amazon AWS S3 Bucket fronted by CloudFront. 
+The SPA's static file assets are stored in an Amazon AWS S3 Bucket fronted by CloudFront.
+
+CloudFront writes access logs to a second S3 bucket, `<stack-name>-cloudfront-logs`, kept for 90 days. See `docs/Observability.md` in the `tacocat-gallery-sveltekit` repo for how to read them alongside the rest of the system's logs and alarms.
 
 ## SAM
 This project uses the Amazon AWS Serverless Application Model (SAM).  You can see all the assets defined in the standard `template.yaml` file.
