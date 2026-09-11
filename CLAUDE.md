@@ -25,6 +25,7 @@ Production deployments are done via GitHub Actions (manual trigger).
 - CloudFront distribution serves content with HTTPS
 - Origin Access Control (OAC) restricts S3 access to CloudFront only
 - Custom error responses return index.html for SPA routing (404/403 → 200 with index.html)
+- CloudFront standard logs (v2) delivered to a dedicated S3 bucket, expiring after 90 days (see Observability)
 
 **Cache behaviors:**
 - `/_app/immutable/*` - 1-year cache with immutable headers (SvelteKit build output)
@@ -35,9 +36,13 @@ Production deployments are done via GitHub Actions (manual trigger).
 - Dev stack: `tacocat-gallery-website-hosting-dev` → staging-pix.tacocat.com
 - Prod stack: `tacocat-gallery-website-hosting-prod` → pix.tacocat.com
 
+## Observability
+
+The distribution writes CloudFront standard logs (v2) to `<stack-name>-cloudfront-logs` under `AWSLogs/<account>/CloudFront/spa/YYYY/MM/DD/`, tab-separated with a `#Fields` header, expiring after 90 days. Delivery lags requests by ten minutes to a few hours. The bucket is retained on stack deletion in prod only. Uptime and alarms are covered in the `tacocat-gallery-sveltekit` repo's `docs/Observability.md`.
+
 ## Key Files
 
-- `template.yaml` - All AWS resources (S3, CloudFront, policies, inline CloudFront Function for robots.txt)
+- `template.yaml` - All AWS resources (S3, CloudFront, policies, inline CloudFront Function for robots.txt, access log delivery)
 - `samconfig.toml` - SAM CLI config with dev/prod parameters
 
 ## CI/CD

@@ -36,6 +36,12 @@ Parameters:
       - arn:aws:acm:us-east-1:010410881828:certificate/e142cda0-96db-4651-92fd-35dd9a52e9a2 # pix.tacocat.com
 
 # -----------------------------------------------------------------------------
+# Conditions
+# -----------------------------------------------------------------------------
+Conditions:
+  IsProd: !Equals [ !Ref GalleryAppDomain, "pix.tacocat.com" ]
+
+# -----------------------------------------------------------------------------
 # Resources are the actual assets that will be provisioned on AWS
 # -----------------------------------------------------------------------------
 Resources:
@@ -111,6 +117,43 @@ Resources:
             StringEquals:
               "AWS:SourceArn": !Join [ "", [ "arn:aws:cloudfront::", !Ref "AWS::AccountId", ":distribution/", !Ref CloudFrontDistribution ] ]
   
+  # -----------------------------------------------------------------------------
+  # S3 bucket for CloudFront access logs (standard logging v2, delivered by
+  # CloudWatch Logs). No ACLs: S3's default bucket-owner-enforced setting accepts
+  # the bucket-owner-full-control header that log delivery sends.
+  # -----------------------------------------------------------------------------
+  CloudFrontLogsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: !If [ "IsProd", "Retain", "Delete" ] # don't delete in prod
+    UpdateReplacePolicy: !If [ "IsProd", "Retain", "Delete" ] # don't delete in prod
+    Properties:
+      BucketName: !Sub ${AWS::StackName}-cloudfront-logs
+      LifecycleConfiguration:
+        Rules:
+          - Id: Expire Old Logs
+            ExpirationInDays: 90
+            Status: Enabled
+
+  CloudFrontLogsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref CloudFrontLogsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AWSLogsDeliveryWrite
+            Effect: Allow
+            Principal:
+              Service: delivery.logs.amazonaws.com
+            Action: s3:PutObject
+            Resource: !Sub ${CloudFrontLogsBucket.Arn}/*
+            Condition:
+              StringEquals:
+                s3:x-amz-acl: bucket-owner-full-control
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:delivery-source:*
+
   # -----------------------------------------------------------------------------
   # CloudFront Distribution for hosting the single page app website
   # -----------------------------------------------------------------------------
@@ -189,6 +232,36 @@ Resources:
         SigningBehavior: always
         SigningProtocol: sigv4
 
+  # ---------------------------------------------------------------------------
+  # CloudFront standard logging (v2) for the SPA distribution -> S3.
+  # Three CloudWatch Logs resources: source (the distribution), destination
+  # (the bucket), and the delivery that pairs them. Must live in us-east-1.
+  # Enabled in every environment so the wiring is proven in staging before prod.
+  # ---------------------------------------------------------------------------
+  SpaLogDeliverySource:
+    Type: AWS::Logs::DeliverySource
+    Properties:
+      Name: !Sub ${AWS::StackName}-spa-cdn
+      LogType: ACCESS_LOGS
+      ResourceArn: !Sub arn:aws:cloudfront::${AWS::AccountId}:distribution/${CloudFrontDistribution}
+
+  SpaLogDeliveryDestination:
+    Type: AWS::Logs::DeliveryDestination
+    Properties:
+      Name: !Sub ${AWS::StackName}-spa-cdn-s3
+      DestinationResourceArn: !GetAtt CloudFrontLogsBucket.Arn
+      OutputFormat: w3c # tab-separated with a #Fields header; cannot be changed without replacing this resource
+
+  SpaLogDelivery:
+    Type: AWS::Logs::Delivery
+    DependsOn:
+      - SpaLogDeliverySource
+      - CloudFrontLogsBucketPolicy
+    Properties:
+      DeliverySourceName: !Sub ${AWS::StackName}-spa-cdn # must equal SpaLogDeliverySource.Name
+      DeliveryDestinationArn: !GetAtt SpaLogDeliveryDestination.Arn
+      S3SuffixPath: spa/{yyyy}/{MM}/{dd}/
+
   # Set Cache-Control header to cache forever
   ImmutableResponseHeadersPolicy:
     Type: AWS::CloudFront::ResponseHeadersPolicy
@@ -236,3 +309,6 @@ Outputs:
   WebS3BucketName:
     Description: S3 Bucket for hosting web site
     Value: !Ref WebsiteBucket
+  CloudFrontLogsBucketName:
+    Description: S3 Bucket receiving CloudFront access logs for the web front end
+    Value: !Ref CloudFrontLogsBucket
