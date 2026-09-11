@@ -251,8 +251,6 @@ Resources:
             ViewerProtocolPolicy: redirect-to-https
             CachePolicyId: !Ref ImmutableCachePolicy
             ResponseHeadersPolicyId: !Ref ImmutableResponseHeadersPolicy
-          # No ResponseHeadersPolicy on purpose: X-Robots-Tag on the
-          # directives file itself would say nothing to anyone.
           - PathPattern: "/robots.txt"
             TargetOriginId: S3Origin
             Compress: true
@@ -268,12 +266,16 @@ Resources:
             FunctionAssociations:
               - EventType: viewer-request
                 FunctionARN: !GetAtt RobotsTxtFunction.FunctionMetadata.FunctionARN
+            # Shares the default policy. The crawler directives say nothing on
+            # a directives file, but HSTS and nosniff apply to any response,
+            # and this behavior is otherwise the one path serving neither.
+            ResponseHeadersPolicyId: !Ref DefaultResponseHeadersPolicy
         DefaultCacheBehavior:
           TargetOriginId: S3Origin
           Compress: true
           ViewerProtocolPolicy: redirect-to-https
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # CachingOptimized managed policy
-          ResponseHeadersPolicyId: !Ref RobotsResponseHeadersPolicy
+          ResponseHeadersPolicyId: !Ref DefaultResponseHeadersPolicy
           AllowedMethods:
           - GET
           - HEAD
@@ -355,17 +357,50 @@ Resources:
         - asn
         - c-country
 
-  # Attached to the default behavior only; the immutable behavior is build
-  # artifacts. None of this enforces anything -- a crawler that ignores
-  # robots.txt ignores these too. Only auth would actually withhold content.
-  RobotsResponseHeadersPolicy:
+  # The default behavior's headers: crawler opt-out plus browser security.
+  # A behavior gets exactly one policy, so both concerns live here rather
+  # than in a policy each. The crawler half is a request that a crawler may
+  # ignore; the security half is enforced by the browser.
+  DefaultResponseHeadersPolicy:
     Type: AWS::CloudFront::ResponseHeadersPolicy
     Properties:
       ResponseHeadersPolicyConfig:
-        Name: !Sub RobotsResponseHeadersPolicy-${AWS::StackName}
-        Comment: !Sub Crawler and AI-training opt-out headers for ${AWS::StackName}
+        Name: !Sub DefaultResponseHeadersPolicy-${AWS::StackName}
+        Comment: !Sub Crawler opt-out and security headers for ${AWS::StackName}
+        SecurityHeadersConfig:
+          # includeSubDomains binds img./api./auth. under this domain. Verified
+          # all three serve HTTPS with a valid cert in both environments before
+          # enabling. Note it binds future subdomains too, so a new one has to
+          # be HTTPS from its first day.
+          # Preload is deliberately off: entering the browsers' preload list is
+          # the one step here that cannot be walked back on our own timetable.
+          StrictTransportSecurity:
+            AccessControlMaxAgeSec: 31536000 # 1 year
+            IncludeSubdomains: true
+            Preload: false
+            Override: true
+          # Emits X-Content-Type-Options: nosniff.
+          ContentTypeOptions:
+            Override: true
+          # Matches what browsers already default to, so it changes nothing
+          # observable today; it pins the behavior against a default changing.
+          ReferrerPolicy:
+            ReferrerPolicy: strict-origin-when-cross-origin
+            Override: true
+          # DENY rather than SAMEORIGIN: the SPA contains no iframes, so there
+          # is nothing to lose, and framing the gallery elsewhere is the one
+          # form of reuse a browser will actually block for us.
+          FrameOptions:
+            FrameOption: DENY
+            Override: true
         CustomHeadersConfig:
           Items:
+            # Not available in SecurityHeadersConfig, so it goes here. Omits
+            # autoplay (the gallery plays video) and fullscreen (a gallery is
+            # the sort of thing that grows a fullscreen viewer).
+            - Header: Permissions-Policy
+              Value: accelerometer=(), browsing-topics=(), camera=(), display-capture=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=()
+              Override: true
             # Duplicates the SPA's noindex meta tag, and reaches what markup
             # can't: non-HTML responses, and crawlers that skip the body.
             # No nofollow: crawlers reach deep routes by following links, and
@@ -396,6 +431,20 @@ Resources:
       ResponseHeadersPolicyConfig: 
         Name: !Sub ImmutableResponseHeadersPolicy-${AWS::StackName}
         Comment: !Sub Immutable response headers policy for ${AWS::StackName}
+        # Repeated from the default policy because a behavior gets one policy
+        # and these bundles get their own. Only the two that mean something on
+        # a subresource: HSTS applies to the host however it arrives, and
+        # nosniff matters most on exactly these files. Frame, referrer and
+        # permissions rules are per-document and would say nothing here.
+        # max-age must match the default policy's; test 7 fails if it drifts.
+        SecurityHeadersConfig:
+          StrictTransportSecurity:
+            AccessControlMaxAgeSec: 31536000 # 1 year
+            IncludeSubdomains: true
+            Preload: false
+            Override: true
+          ContentTypeOptions:
+            Override: true
         CustomHeadersConfig:
           Items:
             - Header: Cache-Control

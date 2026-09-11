@@ -28,6 +28,7 @@ Production deployments are done via GitHub Actions (manual trigger).
 - Custom error responses return index.html for SPA routing (404/403 → 200 with index.html)
 - Access logs delivered to a dedicated S3 bucket, expiring after 90 days (see Observability)
 - `X-Robots-Tag` and `tdm-reservation` response headers opt out of indexing and AI training
+- HSTS (1 year, `includeSubDomains`, no preload), `nosniff`, `Referrer-Policy`, `X-Frame-Options: DENY` and `Permissions-Policy`. `includeSubDomains` binds `img.`/`api.`/`auth.` — a new subdomain must be HTTPS from day one
 
 **Cache behaviors:**
 

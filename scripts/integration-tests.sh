@@ -122,6 +122,68 @@ else
     FAILED=1
 fi
 
+# Test 7: security headers. The same assertions run over every response rather
+# than diffing one field, because HSTS is written into two policies and a flag
+# flipped in only one of them -- includeSubDomains, or a stray preload -- is as
+# real a drift as a mismatched max-age.
+SEC_MISSING=""
+assert_sec() { # label, headers, scope(full|subresource)
+    _l="$1"; _h="$2"; _s="$3"
+    echo "$_h" | grep -qiE '^strict-transport-security:.*max-age=[0-9]+' || SEC_MISSING="$SEC_MISSING $_l/hsts"
+    echo "$_h" | grep -qiE '^strict-transport-security:.*includesubdomains' || SEC_MISSING="$SEC_MISSING $_l/includeSubDomains"
+    # preload cannot be withdrawn on our own schedule, so it is asserted absent
+    # on every response, not just the one that happened to be checked first.
+    echo "$_h" | grep -qiE '^strict-transport-security:.*preload' && SEC_MISSING="$SEC_MISSING $_l/UNEXPECTED-preload"
+    echo "$_h" | grep -qiE '^x-content-type-options:[[:space:]]*nosniff' || SEC_MISSING="$SEC_MISSING $_l/nosniff"
+    if [ "$_s" = "full" ]; then
+        echo "$_h" | grep -qiE '^referrer-policy:' || SEC_MISSING="$SEC_MISSING $_l/referrer-policy"
+        echo "$_h" | grep -qiE '^x-frame-options:[[:space:]]*DENY' || SEC_MISSING="$SEC_MISSING $_l/x-frame-options"
+        echo "$_h" | grep -qiE '^permissions-policy:' || SEC_MISSING="$SEC_MISSING $_l/permissions-policy"
+    fi
+}
+maxage_of() { echo "$1" | grep -iE '^strict-transport-security:' | grep -oE 'max-age=[0-9]+' | head -1; }
+
+echo -n "Test: security headers present and consistent... "
+assert_sec html "$HEADERS" full
+if [ -z "$IMMUTABLE_PATH" ]; then
+    # Test 5 already failed loudly in this case; say so rather than passing a
+    # check that never ran.
+    SEC_MISSING="$SEC_MISSING asset/no-path-to-test"
+else
+    ASSET_HEADERS=$(curl $CURL_OPTS -I "https://$DOMAIN$IMMUTABLE_PATH" | tr -d '\r')
+    assert_sec asset "$ASSET_HEADERS" subresource
+    if [ "$(maxage_of "$ASSET_HEADERS")" != "$(maxage_of "$HEADERS")" ]; then
+        SEC_MISSING="$SEC_MISSING hsts-drift($(maxage_of "$HEADERS")-vs-$(maxage_of "$ASSET_HEADERS"))"
+    fi
+fi
+ROBOTS_HEADERS=$(curl $CURL_OPTS -I "https://$DOMAIN/robots.txt" | tr -d '\r')
+assert_sec robots "$ROBOTS_HEADERS" subresource
+if [ -z "$SEC_MISSING" ]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL (issues:$SEC_MISSING)${NC}"
+    FAILED=1
+fi
+
+# Test 8: do these headers reach a custom error response? Every SPA deep link
+# is an S3 403 rewritten to index.html, so this covers most real page views.
+# CloudFront does not apply the *matched* behavior's policy to error responses
+# (verified against prod), and AWS does not document whether the default
+# behavior's policy applies instead. Reports rather than fails: the answer is
+# wanted, but it is a known unknown and should not gate a deploy. The noindex
+# meta tag is in the served HTML either way, so goal #1 holds regardless.
+echo -n "Test: headers on SPA deep link (informational)... "
+DEEP_HEADERS=$(curl $CURL_OPTS -I "https://$DOMAIN/2024/01-01/nonexistent" | tr -d '\r')
+DEEP_MISSING=""
+echo "$DEEP_HEADERS" | grep -qiE '^x-robots-tag:.*noindex' || DEEP_MISSING="$DEEP_MISSING x-robots-tag"
+echo "$DEEP_HEADERS" | grep -qiE '^strict-transport-security:' || DEEP_MISSING="$DEEP_MISSING hsts"
+echo "$DEEP_HEADERS" | grep -qiE '^x-content-type-options:' || DEEP_MISSING="$DEEP_MISSING nosniff"
+if [ -z "$DEEP_MISSING" ]; then
+    echo -e "${GREEN}headers DO reach error responses${NC}"
+else
+    echo -e "${YELLOW}headers do NOT reach error responses (missing:$DEEP_MISSING)${NC}"
+fi
+
 echo "================================================="
 if [ "$FAILED" = "1" ]; then
     echo -e "${RED}Some tests FAILED${NC}"
