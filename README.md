@@ -64,7 +64,7 @@ There are no unit tests.
 You must submit a PR to change main.
 
 - Committing will:
-  - Run precommit checks, like a secret scanner, linter, and SAM template validation.
+  - Run precommit checks: `scripts/lint.sh` (SAM template, CloudFront Function JavaScript, shell scripts, GitHub Actions workflows) and a secret scanner.
 - Merging a PR will:
   -  Deploy to dev / staging
   -  Run integration tests

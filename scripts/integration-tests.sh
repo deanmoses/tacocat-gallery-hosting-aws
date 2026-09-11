@@ -4,7 +4,7 @@
 
 DOMAIN="${1:-staging-pix.tacocat.com}"
 FAILED=0
-CURL_OPTS="--max-time 10 --silent"
+CURL_OPTS=(--max-time 10 --silent)
 
 # Colors
 GREEN='\033[0;32m'
@@ -18,11 +18,11 @@ echo "================================================="
 # Test 1: robots.txt keeps the site crawlable, which is what makes the SPA's
 # noindex work. Blocking here reads like tighter privacy but does the opposite.
 echo -n "Test: robots.txt allows crawling... "
-STATUS=$(curl $CURL_OPTS -o /dev/null -w "%{http_code}" "https://$DOMAIN/robots.txt")
-ROBOTS=$(curl $CURL_OPTS "https://$DOMAIN/robots.txt")
+STATUS=$(curl "${CURL_OPTS[@]}" -o /dev/null -w "%{http_code}" "https://$DOMAIN/robots.txt")
+ROBOTS=$(curl "${CURL_OPTS[@]}" "https://$DOMAIN/robots.txt")
 # Group-aware: the AI-training group ends in a legitimate "Disallow: /", so
 # only a block on the wildcard group is a failure.
-STAR_BLOCKED=$(echo "$ROBOTS" | tr 'A-Z' 'a-z' | awk '
+STAR_BLOCKED=$(echo "$ROBOTS" | tr '[:upper:]' '[:lower:]' | awk '
     BEGIN { star = 0; inrules = 0; hit = 0 }
     /^[ \t]*#/ { next }
     /^[ \t]*$/ { next }
@@ -58,7 +58,7 @@ fi
 
 # Test 2: Root returns 200
 echo -n "Test: Root path returns 200... "
-STATUS=$(curl $CURL_OPTS -o /dev/null -w "%{http_code}" "https://$DOMAIN/")
+STATUS=$(curl "${CURL_OPTS[@]}" -o /dev/null -w "%{http_code}" "https://$DOMAIN/")
 if [ "$STATUS" = "200" ]; then
     echo -e "${GREEN}PASS${NC}"
 else
@@ -68,7 +68,7 @@ fi
 
 # Test 3: SPA routing works (unknown path returns 200 with index.html)
 echo -n "Test: SPA routing returns 200 for unknown paths... "
-STATUS=$(curl $CURL_OPTS -o /dev/null -w "%{http_code}" "https://$DOMAIN/2024/01-01/nonexistent")
+STATUS=$(curl "${CURL_OPTS[@]}" -o /dev/null -w "%{http_code}" "https://$DOMAIN/2024/01-01/nonexistent")
 if [ "$STATUS" = "200" ]; then
     echo -e "${GREEN}PASS${NC}"
 else
@@ -79,7 +79,7 @@ fi
 # Test 4: HTTPS is enforced (HTTP redirects to HTTPS)
 echo -n "Test: HTTP redirects to HTTPS... "
 # Don't follow redirects, just check we get a 301/302 redirect
-STATUS=$(curl $CURL_OPTS -o /dev/null -w "%{http_code}" "http://$DOMAIN/" 2>/dev/null || echo "000")
+STATUS=$(curl "${CURL_OPTS[@]}" -o /dev/null -w "%{http_code}" "http://$DOMAIN/" 2>/dev/null || echo "000")
 if [ "$STATUS" = "301" ] || [ "$STATUS" = "302" ]; then
     echo -e "${GREEN}PASS${NC}"
 elif [ "$STATUS" = "000" ]; then
@@ -92,13 +92,13 @@ fi
 # Test 5: Immutable assets have correct cache headers
 echo -n "Test: Immutable assets have 1-year cache headers... "
 # Fetch homepage and extract an immutable asset URL
-HOMEPAGE=$(curl $CURL_OPTS "https://$DOMAIN/")
+HOMEPAGE=$(curl "${CURL_OPTS[@]}" "https://$DOMAIN/")
 IMMUTABLE_PATH=$(echo "$HOMEPAGE" | grep -oE '/_app/immutable/[^"]+' | head -1)
 if [ -z "$IMMUTABLE_PATH" ]; then
     echo -e "${RED}FAIL (homepage references no /_app/immutable/ assets)${NC}"
     FAILED=1
 else
-    CACHE_HEADER=$(curl $CURL_OPTS -I "https://$DOMAIN$IMMUTABLE_PATH" | grep -i "cache-control" | tr -d '\r')
+    CACHE_HEADER=$(curl "${CURL_OPTS[@]}" -I "https://$DOMAIN$IMMUTABLE_PATH" | grep -i "cache-control" | tr -d '\r')
     if echo "$CACHE_HEADER" | grep -q "max-age=31536000" && echo "$CACHE_HEADER" | grep -q "immutable"; then
         echo -e "${GREEN}PASS${NC}"
     else
@@ -110,7 +110,7 @@ fi
 # Test 6: opt-out headers. They live on the CloudFront policy, not in the SPA
 # build, so nothing in the sveltekit repo would catch their loss.
 echo -n "Test: crawler opt-out headers present... "
-HEADERS=$(curl $CURL_OPTS -I "https://$DOMAIN/" | tr -d '\r')
+HEADERS=$(curl "${CURL_OPTS[@]}" -I "https://$DOMAIN/" | tr -d '\r')
 MISSING=""
 echo "$HEADERS" | grep -qiE '^x-robots-tag:.*noindex' || MISSING="$MISSING x-robots-tag/noindex"
 echo "$HEADERS" | grep -qiE '^x-robots-tag:.*noai' || MISSING="$MISSING x-robots-tag/noai"
@@ -150,13 +150,13 @@ if [ -z "$IMMUTABLE_PATH" ]; then
     # check that never ran.
     SEC_MISSING="$SEC_MISSING asset/no-path-to-test"
 else
-    ASSET_HEADERS=$(curl $CURL_OPTS -I "https://$DOMAIN$IMMUTABLE_PATH" | tr -d '\r')
+    ASSET_HEADERS=$(curl "${CURL_OPTS[@]}" -I "https://$DOMAIN$IMMUTABLE_PATH" | tr -d '\r')
     assert_sec asset "$ASSET_HEADERS" subresource
     if [ "$(maxage_of "$ASSET_HEADERS")" != "$(maxage_of "$HEADERS")" ]; then
         SEC_MISSING="$SEC_MISSING hsts-drift($(maxage_of "$HEADERS")-vs-$(maxage_of "$ASSET_HEADERS"))"
     fi
 fi
-ROBOTS_HEADERS=$(curl $CURL_OPTS -I "https://$DOMAIN/robots.txt" | tr -d '\r')
+ROBOTS_HEADERS=$(curl "${CURL_OPTS[@]}" -I "https://$DOMAIN/robots.txt" | tr -d '\r')
 assert_sec robots "$ROBOTS_HEADERS" subresource
 if [ -z "$SEC_MISSING" ]; then
     echo -e "${GREEN}PASS${NC}"
@@ -173,7 +173,7 @@ fi
 # wanted, but it is a known unknown and should not gate a deploy. The noindex
 # meta tag is in the served HTML either way, so goal #1 holds regardless.
 echo -n "Test: headers on SPA deep link (informational)... "
-DEEP_HEADERS=$(curl $CURL_OPTS -I "https://$DOMAIN/2024/01-01/nonexistent" | tr -d '\r')
+DEEP_HEADERS=$(curl "${CURL_OPTS[@]}" -I "https://$DOMAIN/2024/01-01/nonexistent" | tr -d '\r')
 DEEP_MISSING=""
 echo "$DEEP_HEADERS" | grep -qiE '^x-robots-tag:.*noindex' || DEEP_MISSING="$DEEP_MISSING x-robots-tag"
 echo "$DEEP_HEADERS" | grep -qiE '^strict-transport-security:' || DEEP_MISSING="$DEEP_MISSING hsts"

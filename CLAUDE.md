@@ -11,6 +11,7 @@ This is an AWS SAM infrastructure-only project that defines hosting for the Taco
 ```bash
 npm install         # Install husky (first time setup)
 sam validate        # Validate template.yaml syntax
+./scripts/lint.sh   # Full lint suite (cfn-lint, CloudFront Function JS, shellcheck, actionlint)
 sam build           # Transform the SAM template
 sam sync            # Deploys to dev / staging (hosts the files of staging-pix.tacocat.com)
 
@@ -48,8 +49,9 @@ Production deployments are done via GitHub Actions (manual trigger).
 
 ## CI/CD
 
-- **Pre-commit hooks**: Husky runs sam validate and gitleaks (secret scanning) on commit.
-- **CI workflow**: On PR and push to main, runs SAM validate, build, and changeset validation. On push to main, also deploys to staging and runs integration tests.
+- **Linting**: `scripts/lint.sh` is the single lint entry point, run by both the pre-commit hook and CI so the two cannot drift. It covers cfn-lint (`sam validate --lint`), the inline CloudFront Function's JavaScript, shellcheck on `*.sh` plus the hook, and actionlint on the workflows. A missing linter only warns locally, but fails in CI (`CI` is set) — a check CI skips silently is a check that no longer exists.
+- **Pre-commit hooks**: Husky runs `scripts/lint.sh` and gitleaks (secret scanning) on commit. Husky invokes hooks with `sh -e`, so `.husky/pre-commit` must stay POSIX.
+- **CI workflow**: On PR and push to main, runs lint, build, and changeset validation. On push to main, also deploys to staging and runs integration tests.
 - **Production deploy**: Manual workflow dispatch from GitHub Actions. Deploys to prod, runs integration tests, creates a release tag (YYYYvN format), and generates release notes.
 
 ## Observability

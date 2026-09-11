@@ -1,10 +1,13 @@
+#!/usr/bin/env sh
+# Husky runs this with `sh -e` and ignores the shebang; the shebang is here so
+# that linters know which dialect to check. Keep this file POSIX.
 set -e
 
-# Validate SAM template
-sam validate
+# The same suite CI runs, so a commit that passes here passes there.
+./scripts/lint.sh
 
 # Scan for secrets (requires installing gitleaks)
-if command -v gitleaks &> /dev/null; then
+if command -v gitleaks >/dev/null 2>&1; then
     gitleaks protect --staged --no-banner
 else
     echo "Warning: gitleaks not installed, skipping secret scan"

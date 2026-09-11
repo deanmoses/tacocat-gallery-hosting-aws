@@ -19,8 +19,27 @@ jobs:
               with:
                   use-installer: true
 
-            - name: SAM validate
-              run: sam validate --lint
+            # Pinned and checksum-verified rather than installed from a script
+            # piped to a shell, since this runs with the repo checked out.
+            - name: Install actionlint
+              env:
+                  ACTIONLINT_VERSION: 1.7.12
+                  ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+              run: |
+                  set -euo pipefail
+                  curl -fsSL -o actionlint.tar.gz \
+                    "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+                  echo "${ACTIONLINT_SHA256}  actionlint.tar.gz" | sha256sum -c -
+                  tar -xzf actionlint.tar.gz actionlint
+                  sudo install -m 0755 actionlint /usr/local/bin/actionlint
+                  rm -f actionlint.tar.gz actionlint
+
+            # The same script .husky/pre-commit runs, so the two cannot drift.
+            # Covers cfn-lint, the inline CloudFront Function's JS, shell
+            # scripts and the workflows themselves. CI sets CI=true, which makes
+            # a missing linter a failure here rather than a silent skip.
+            - name: Lint
+              run: ./scripts/lint.sh
 
             - name: SAM build
               run: sam build
