@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is an AWS SAM infrastructure-only project that defines hosting for the Tacocat photo gallery SPA. It contains no application code—just CloudFormation/SAM templates that provision AWS resources. The actual website is deployed separately to this infrastructure.
+This is an AWS SAM infrastructure-only project that defines hosting for the Tacocat photo gallery SPA. It contains no application code, just a CloudFormation/SAM template that provision AWS resources. The actual website is deployed separately to this infrastructure.  The ecosystem is described in the `tacocat-gallery-sveltekit` project's `docs/Ecosystem.md`.
 
 ## Commands
 
@@ -17,11 +17,9 @@ sam sync            # Deploys to dev / staging (hosts the files of staging-pix.t
 
 ```
 
-Production deployments are done via GitHub Actions (manual trigger).
-
 ## Architecture
 
-**S3 + CloudFront static SPA hosting:**
+### S3 + CloudFront static SPA hosting
 
 - S3 bucket stores static assets (HTML, CSS, JS, images)
 - CloudFront distribution serves content with HTTPS
@@ -31,13 +29,13 @@ Production deployments are done via GitHub Actions (manual trigger).
 - `X-Robots-Tag` and `tdm-reservation` response headers opt out of indexing and AI training
 - HSTS (1 year, `includeSubDomains`, no preload), `nosniff`, `Referrer-Policy`, `X-Frame-Options: DENY` and `Permissions-Policy`. `includeSubDomains` binds `img.`/`api.`/`auth.` — a new subdomain must be HTTPS from day one
 
-**Cache behaviors:**
+### Cache behaviors
 
 - `/_app/immutable/*`: 1-year cache with immutable headers (SvelteKit build output)
 - `/robots.txt`: Served by CloudFront Function
 - Default: Standard CloudFront caching
 
-**Environments:**
+### Environments
 
 - Dev stack: `tacocat-gallery-website-hosting-dev` → staging-pix.tacocat.com
 - Prod stack: `tacocat-gallery-website-hosting-prod` → pix.tacocat.com
@@ -49,10 +47,9 @@ Production deployments are done via GitHub Actions (manual trigger).
 
 ## CI/CD
 
-- **Linting**: `scripts/lint.sh` is the single lint entry point, run by both the pre-commit hook and CI so the two cannot drift. It covers cfn-lint (`sam validate --lint`), the inline CloudFront Function's JavaScript, shellcheck on `*.sh` plus the hook, and actionlint on the workflows. A missing linter only warns locally, but fails in CI (`CI` is set) — a check CI skips silently is a check that no longer exists.
-- **Pre-commit hooks**: Husky runs `scripts/lint.sh` and gitleaks (secret scanning) on commit. Husky invokes hooks with `sh -e`, so `.husky/pre-commit` must stay POSIX.
-- **CI workflow**: On PR and push to main, runs lint, build, and changeset validation. On push to main, also deploys to staging and runs integration tests.
-- **Production deploy**: Manual workflow dispatch from GitHub Actions. Deploys to prod, runs integration tests, creates a release tag (YYYYvN format), and generates release notes.
+- **Pre-commit hooks**: Husky runs `scripts/lint.sh` and gitleaks secret scanning on commit.
+- **CI workflow**: on PR and push to main, runs lint, build, and changeset validation. On push to main, also deploys to staging and runs integration tests.
+- **Production deploy**: production deployments are done by manually triggering a GitHub Action.  Deploys to prod, runs integration tests, creates a release tag and generates release notes.
 
 ## Observability
 

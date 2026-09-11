@@ -11,11 +11,8 @@ The SPA's static file assets are stored in an Amazon AWS S3 Bucket fronted by Cl
 CloudFront writes access logs to a second S3 bucket, `<stack-name>-cloudfront-logs`, kept for 90 days. See `docs/Observability.md` in the `tacocat-gallery-sveltekit` repo for how to read them alongside the rest of the system's logs and alarms.
 
 ## SAM
-This project uses the Amazon AWS Serverless Application Model (SAM).  You can see all the assets defined in the standard `template.yaml` file.
 
-It's a little weird to use SAM because there's no code, no lambdas.  I'm using it because:
- - At some point this project might contain lambdas
- - Since every other project in the system uses SAM, it's easier to make them all similar
+This project uses the Amazon AWS Serverless Application Model (SAM).  You can see all the assets defined in the standard `template.yaml` file.  It's a little weird to use SAM because there's no code, no lambdas.  I'm using it because every other project in the system uses SAM, it's easier to make them all similar.
 
 ## Prerequisites
 
@@ -32,9 +29,11 @@ npm install
 ```
 
 ## Develop
+
 The main 'development' is editing the AWS infrastructure (`template.yaml`):
 
 When you make changes to the template:
+
 ```bash
 sam validate        # Validates any changes you've made to the SAM template.yaml
 sam build           # Transform the template
@@ -45,11 +44,13 @@ sam build           # Transform the template
 Dev/staging hosts the files of <https://staging-pix.tacocat.com>.  
 
 To deploy:
+
 ```bash
 sam sync          # Re-deploy the stack to dev/staging
 ```
 
 After deploying, you can either:
+
 - Hit <https://staging-pix.tacocat.com> and validate that the web app is still being served correctly.
 - Go the project that builds the actual website assets and deploy it to this infrastructure.
 - Run integration tests:
@@ -61,13 +62,14 @@ After deploying, you can either:
 There are no unit tests.
 
 ## Committing & PRs
+
 You must submit a PR to change main.
 
 - Committing will:
-  - Run precommit checks: `scripts/lint.sh` (SAM template, CloudFront Function JavaScript, shell scripts, GitHub Actions workflows) and a secret scanner.
+  - Run precommit checks: `scripts/lint.sh` (SAM template, CloudFront Function JavaScript, shell scripts, GitHub Actions), secret scanner.
 - Merging a PR will:
-  -  Deploy to dev / staging
-  -  Run integration tests
+  - Deploy to dev / staging
+  - Run integration tests
 
 ## Deploy to prod
 
@@ -76,7 +78,7 @@ Prod hosts the files of <https://pix.tacocat.com>
 - Use the `Deploy to Production` GitHub Action to deploy to prod.  This will:
   - Deploy to prod
   - Run integration tests
-  - Create a release tag and release on GitHub 
+  - Create a release tag and release on GitHub
 - Then you can either:
   - Hit <https://pix.tacocat.com> and validate that the web app is still being served correctly.
   - Go to the project that builds the actual website assets and deploy it to this infrastructure.
