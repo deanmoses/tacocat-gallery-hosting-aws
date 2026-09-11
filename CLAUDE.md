@@ -27,12 +27,13 @@ Production deployments are done via GitHub Actions (manual trigger).
 - Origin Access Control (OAC) restricts S3 access to CloudFront only
 - Custom error responses return index.html for SPA routing (404/403 → 200 with index.html)
 - Access logs delivered to a dedicated S3 bucket, expiring after 90 days (see Observability)
+- `X-Robots-Tag` and `tdm-reservation` response headers opt out of indexing and AI training
 
 **Cache behaviors:**
 
-- `/_app/immutable/*` - 1-year cache with immutable headers (SvelteKit build output)
-- `/robots.txt` - Intercepted by CloudFront Function to return 404
-- Default - Standard CloudFront caching
+- `/_app/immutable/*`: 1-year cache with immutable headers (SvelteKit build output)
+- `/robots.txt`: Served by CloudFront Function
+- Default: Standard CloudFront caching
 
 **Environments:**
 

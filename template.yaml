@@ -46,30 +46,86 @@ Conditions:
 # -----------------------------------------------------------------------------
 Resources:
 
-  # CloudFront Function to return 404 for robots.txt
-  # The actual SPA prevents indexing via <meta name="robots" content="noindex"> in the HTML.
-  # This function ensures crawlers get a proper 404 instead of index.html with a 200.
-  # FunctionCode must be inline - CloudFormation doesn't support external file references.
+  # Serves /robots.txt. From a function, not an S3 file, so the SPA's
+  # 404-to-index.html rewrite can't hand crawlers HTML to parse as directives.
   RobotsTxtFunction:
     Type: AWS::CloudFront::Function
     Properties:
       Name: !Sub ${AWS::StackName}-robots-txt-handler
       AutoPublish: true
+      # Must be inline; CloudFormation can't reference an external file.
       FunctionCode: |
+        // Blocked by name because they only train, so there's no listing to
+        // lose. Google-Extended and Applebot-Extended govern training alone --
+        // Googlebot and Applebot still crawl, and indexing is unaffected.
+        // Sorted, so a duplicate is visible on sight. Curated rather than
+        // exhaustive: published lists run to 60+ but carry dead operators and
+        // library UAs like Scrapy, which no one sets honestly.
+        // The -User and -SearchBot agents are retrieval, not training. Blocking
+        // them contradicts the allow-so-noindex-is-seen logic above, and it is
+        // deliberate: unlike Google these have no de-indexing pathway to
+        // preserve, so there is no listing to protect by letting them in.
+        var AI_TRAINING_BOTS = [
+          'AI2Bot',
+          'Amazonbot',
+          'anthropic-ai',
+          'Applebot-Extended',
+          'Bytespider',
+          'CCBot',
+          'ChatGPT-User',
+          'Claude-SearchBot',
+          'Claude-User',
+          'Claude-Web',
+          'ClaudeBot',
+          'cohere-ai',
+          'Diffbot',
+          'DuckAssistBot',
+          'FacebookBot',
+          'Google-CloudVertexBot',
+          'Google-Extended',
+          'GPTBot',
+          'ImagesiftBot',
+          'img2dataset',
+          'Meta-ExternalAgent',
+          'meta-externalfetcher',
+          'MistralAI-User',
+          'OAI-SearchBot',
+          'omgili',
+          'omgilibot',
+          'PanguBot',
+          'Perplexity-User',
+          'PerplexityBot',
+          'SemrushBot-OCOB',
+          'Timpibot',
+          'Webzio-Extended',
+          'YouBot'
+        ];
+
         function handler(event) {
           var request = event.request;
           var uri = request.uri;
 
           if (uri === '/robots.txt') {
+            // Crawling is allowed in order to stay OUT of search results: a
+            // crawler must fetch a page to see its noindex. A Disallow here
+            // would hide the noindex and leave bare URLs listed instead.
+            // No Crawl-delay -- Google ignores it, and slowing the crawlers
+            // that honor it would only delay de-indexing.
+            var body = 'User-agent: *\nAllow: /\n\n';
+            for (var i = 0; i < AI_TRAINING_BOTS.length; i++) {
+              body += 'User-agent: ' + AI_TRAINING_BOTS[i] + '\n';
+            }
+            body += 'Disallow: /\n';
+
             return {
-              statusCode: 404,
-              statusDescription: 'Not Found',
+              statusCode: 200,
+              statusDescription: 'OK',
               headers: {
-                'content-type': { value: 'text/plain' }
+                'content-type': { value: 'text/plain; charset=utf-8' }
               },
               body: {
                 encoding: 'text',
-                data: 'Not Found'
+                data: body
               }
             };
           }
@@ -77,7 +133,7 @@ Resources:
           return request;
         }
       FunctionConfig:
-        Comment: "Returns a 404 for robots.txt"
+        Comment: "Serves robots.txt; crawling allowed so the noindex is seen"
         Runtime: cloudfront-js-2.0
 
   # -----------------------------------------------------------------------------
@@ -195,6 +251,8 @@ Resources:
             ViewerProtocolPolicy: redirect-to-https
             CachePolicyId: !Ref ImmutableCachePolicy
             ResponseHeadersPolicyId: !Ref ImmutableResponseHeadersPolicy
+          # No ResponseHeadersPolicy on purpose: X-Robots-Tag on the
+          # directives file itself would say nothing to anyone.
           - PathPattern: "/robots.txt"
             TargetOriginId: S3Origin
             Compress: true
@@ -215,6 +273,7 @@ Resources:
           Compress: true
           ViewerProtocolPolicy: redirect-to-https
           CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # CachingOptimized managed policy
+          ResponseHeadersPolicyId: !Ref RobotsResponseHeadersPolicy
           AllowedMethods:
           - GET
           - HEAD
@@ -296,6 +355,40 @@ Resources:
         - asn
         - c-country
 
+  # Attached to the default behavior only; the immutable behavior is build
+  # artifacts. None of this enforces anything -- a crawler that ignores
+  # robots.txt ignores these too. Only auth would actually withhold content.
+  RobotsResponseHeadersPolicy:
+    Type: AWS::CloudFront::ResponseHeadersPolicy
+    Properties:
+      ResponseHeadersPolicyConfig:
+        Name: !Sub RobotsResponseHeadersPolicy-${AWS::StackName}
+        Comment: !Sub Crawler and AI-training opt-out headers for ${AWS::StackName}
+        CustomHeadersConfig:
+          Items:
+            # Duplicates the SPA's noindex meta tag, and reaches what markup
+            # can't: non-HTML responses, and crawlers that skip the body.
+            # No nofollow: crawlers reach deep routes by following links, and
+            # that is how the noindex gets delivered to pages already indexed.
+            # noimageindex is the one that covers the photos -- Google ties an
+            # image to the page embedding it, so this reaches img.pix even
+            # though that distribution lives in another repo.
+            # nosnippet/max-image-preview/notranslate suppress what is shown
+            # in the weeks before a recrawl actually drops the page.
+            # noarchive is historical at Google but may still serve Bing.
+            # noai/noimageai are a DeviantArt-origin convention, absent from
+            # Google's documented directives. Kept because they cost nothing,
+            # not because any crawler is known to honor them.
+            - Header: X-Robots-Tag
+              Value: noindex, noimageindex, nosnippet, max-image-preview:none, notranslate, noarchive, noai, noimageai
+              Override: true
+            # W3C TDMRep, 1 = rights reserved. Legal rather than technical: EU
+            # DSM Article 4 permits commercial text/data mining unless reserved
+            # "by machine-readable means". This is that reservation.
+            - Header: tdm-reservation
+              Value: "1"
+              Override: true
+
   # Set Cache-Control header to cache forever
   ImmutableResponseHeadersPolicy:
     Type: AWS::CloudFront::ResponseHeadersPolicy
@@ -307,6 +400,13 @@ Resources:
           Items:
             - Header: Cache-Control
               Value: public, max-age=31536000, immutable
+              Override: true
+            # A behavior gets one policy, so this repeats the robots directive
+            # rather than inheriting it. Deliberately shorter than the default
+            # behavior's: the image and snippet rules mean nothing on a JS or
+            # CSS bundle, so there is no shared value to drift.
+            - Header: X-Robots-Tag
+              Value: noindex
               Override: true
 
   # Caching policy to cache forever
