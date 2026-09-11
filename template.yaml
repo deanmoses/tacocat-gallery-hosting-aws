@@ -256,6 +256,9 @@ Resources:
             Compress: true
             ViewerProtocolPolicy: redirect-to-https
             CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6 # CachingOptimized managed policy
+            # Crawler directives say nothing on a directives file; HSTS and
+            # nosniff apply to any response.
+            ResponseHeadersPolicyId: !Ref DefaultResponseHeadersPolicy
             AllowedMethods:
               - GET
               - HEAD
@@ -266,10 +269,6 @@ Resources:
             FunctionAssociations:
               - EventType: viewer-request
                 FunctionARN: !GetAtt RobotsTxtFunction.FunctionMetadata.FunctionARN
-            # Shares the default policy. The crawler directives say nothing on
-            # a directives file, but HSTS and nosniff apply to any response,
-            # and this behavior is otherwise the one path serving neither.
-            ResponseHeadersPolicyId: !Ref DefaultResponseHeadersPolicy
         DefaultCacheBehavior:
           TargetOriginId: S3Origin
           Compress: true

@@ -165,23 +165,22 @@ else
     FAILED=1
 fi
 
-# Test 8: do these headers reach a custom error response? Every SPA deep link
-# is an S3 403 rewritten to index.html, so this covers most real page views.
-# CloudFront does not apply the *matched* behavior's policy to error responses
-# (verified against prod), and AWS does not document whether the default
-# behavior's policy applies instead. Reports rather than fails: the answer is
-# wanted, but it is a known unknown and should not gate a deploy. The noindex
-# meta tag is in the served HTML either way, so goal #1 holds regardless.
-echo -n "Test: headers on SPA deep link (informational)... "
+# Test 8: every SPA deep link is an S3 403 rewritten to index.html, so this is
+# most real page views. CloudFront does not apply the matched behavior's policy
+# to error responses but does apply the default behavior's -- true as of the
+# 2026-09 staging deploy, and undocumented by AWS, so it is pinned rather than
+# assumed. A failure here means error responses stopped inheriting headers.
+echo -n "Test: headers reach SPA deep links... "
+SEC_MISSING=""
 DEEP_HEADERS=$(curl "${CURL_OPTS[@]}" -I "https://$DOMAIN/2024/01-01/nonexistent" | tr -d '\r')
-DEEP_MISSING=""
-echo "$DEEP_HEADERS" | grep -qiE '^x-robots-tag:.*noindex' || DEEP_MISSING="$DEEP_MISSING x-robots-tag"
-echo "$DEEP_HEADERS" | grep -qiE '^strict-transport-security:' || DEEP_MISSING="$DEEP_MISSING hsts"
-echo "$DEEP_HEADERS" | grep -qiE '^x-content-type-options:' || DEEP_MISSING="$DEEP_MISSING nosniff"
-if [ -z "$DEEP_MISSING" ]; then
-    echo -e "${GREEN}headers DO reach error responses${NC}"
+assert_sec deeplink "$DEEP_HEADERS" full
+echo "$DEEP_HEADERS" | grep -qiE '^x-robots-tag:.*noindex' || SEC_MISSING="$SEC_MISSING deeplink/x-robots-tag"
+echo "$DEEP_HEADERS" | grep -qiE '^tdm-reservation:[[:space:]]*1' || SEC_MISSING="$SEC_MISSING deeplink/tdm-reservation"
+if [ -z "$SEC_MISSING" ]; then
+    echo -e "${GREEN}PASS${NC}"
 else
-    echo -e "${YELLOW}headers do NOT reach error responses (missing:$DEEP_MISSING)${NC}"
+    echo -e "${RED}FAIL (missing:$SEC_MISSING)${NC}"
+    FAILED=1
 fi
 
 echo "================================================="
