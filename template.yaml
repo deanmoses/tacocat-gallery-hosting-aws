@@ -322,9 +322,19 @@ Resources:
       DeliveryDestinationArn: !GetAtt SpaLogDeliveryDestination.Arn
       S3SuffixPath: spa/{yyyy}/{MM}/{dd}/
       # Naming RecordFields at all means listing every field wanted; there is no
-      # add-to-the-default form. This is CloudFront's default minus cs(Cookie),
-      # x-forwarded-for, fle-* and sc-range-*, which this distribution cannot
-      # populate, plus asn and c-country. Order sets the column order in S3.
+      # add-to-the-default form. Through c-country this is CloudFront's default
+      # minus cs(Cookie), x-forwarded-for, fle-* and sc-range-*, which this
+      # distribution cannot populate, plus asn and c-country.
+      # Same list as the image distribution in tacocat-gallery-sam.
+      #
+      # Order sets the column order, and the analytics reader takes each file's
+      # #Fields header, so new fields go at the end and the earlier columns keep
+      # their positions. timestamp(ms) orders requests within a second;
+      # origin-fbl and origin-lbl split time-taken into edge and origin;
+      # cache-behavior-path-pattern says which behavior served the request.
+      # cs-uri-query stays and cs(Cookie) stays out, which together mean auth.
+      # can never sit behind this distribution: its login callback carries the
+      # OAuth code and state in the query string.
       RecordFields:
         - date
         - time
@@ -355,6 +365,10 @@ Resources:
         - sc-content-len
         - asn
         - c-country
+        - timestamp(ms)
+        - origin-fbl
+        - origin-lbl
+        - cache-behavior-path-pattern
 
   # The default behavior's headers: crawler opt-out plus browser security.
   # A behavior gets exactly one policy, so both concerns live here rather
