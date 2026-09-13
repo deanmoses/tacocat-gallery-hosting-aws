@@ -44,7 +44,7 @@ sam sync            # Deploys to dev / staging (hosts the files of staging-pix.t
 
 - `template.yaml` - All AWS resources (S3, CloudFront, policies, inline CloudFront Function for robots.txt, access log delivery)
 - `samconfig.toml` - SAM CLI config with dev/prod parameters
-- `infra/github-oidc.yaml` - IAM roles CI assumes and the CloudFormation service role that deploys the stacks. Deployed by hand, see `infra/README.md`
+- `infra/github-oidc.yaml` - IAM roles CI assumes and the per-environment CloudFormation service roles that deploy the stacks. Deployed by hand, see `infra/README.md`
 
 ## CI/CD
 

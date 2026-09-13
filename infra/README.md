@@ -4,7 +4,7 @@ Things that must exist in the AWS account before CI can run, and so are deployed
 
 ## GitHub Actions roles
 
-[github-oidc.yaml](github-oidc.yaml) creates the three roles the workflows assume (pull request, main, prod) and the CloudFormation service role that does the actual deploying. The template's header comment explains how they fit together. The GitHub OIDC identity provider they trust is account-wide and lives in the [aws-bootstrap](https://github.com/deanmoses/aws-bootstrap) repo.
+[github-oidc.yaml](github-oidc.yaml) creates the three roles the workflows assume (pull request, main, prod) and the two CloudFormation service roles, one per environment, that do the actual deploying. The template's header comment explains how they fit together. The GitHub OIDC identity provider they trust is account-wide and lives in the [aws-bootstrap](https://github.com/deanmoses/aws-bootstrap) repo.
 
 Deploy or update with admin credentials:
 
