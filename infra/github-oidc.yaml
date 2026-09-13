@@ -36,7 +36,7 @@ Description: >-
 #
 #   repo:ORG/REPO:pull_request          PR role    dry-run change set on dev
 #   repo:ORG/REPO:ref:refs/heads/main   main role  deploy dev (staging)
-#   repo:ORG/REPO:environment:prod      prod role  deploy prod (needs the environment's approval)
+#   repo:ORG/REPO:environment:prod      prod role  deploy prod (the environment allows only main)
 # -----------------------------------------------------------------------------
 
 Parameters:
@@ -342,7 +342,7 @@ Resources:
         Type: AWS::IAM::Role
         Properties:
             RoleName: tacocat-gallery-website-hosting-cicd-github-prod
-            Description: Assumed by the production deploy job, which runs inside the GitHub environment that requires a reviewer's approval
+            Description: Assumed by the production deploy job, which runs inside the GitHub environment that deploys only from main
             MaxSessionDuration: 3600
             AssumeRolePolicyDocument:
                 Version: '2012-10-17'

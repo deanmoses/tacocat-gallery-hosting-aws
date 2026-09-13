@@ -14,13 +14,13 @@ aws cloudformation deploy --template-file infra/github-oidc.yaml --stack-name ta
 
 The role ARNs are stable, so the workflows and `samconfig.toml` reference them directly. If you rename a role, update `.github/workflows/*.yml` and the `role_arn` entries in `samconfig.toml` to match.
 
-There are no AWS secrets in the GitHub repository. A workflow job gets a short-lived credential by presenting its OIDC token, and which role it may assume is decided by the token's `sub` claim: pull requests, runs on `main`, or the `prod` GitHub environment. The `prod` environment is configured in the repository settings to require a reviewer's approval and to deploy only from protected branches.
+There are no AWS secrets in the GitHub repository. A workflow job gets a short-lived credential by presenting its OIDC token, and which role it may assume is decided by the token's `sub` claim: pull requests, runs on `main`, or the `prod` GitHub environment. The `prod` environment is configured in the repository settings to deploy only from protected branches, of which `main` is the only one. It has no required reviewer: the pull request into `main` is the review.
 
 ## GitHub repository settings
 
 Settings CI relies on that live in the repository's settings rather than in a file here:
 
-- `prod` environment: requires a reviewer and deploys only from protected branches. The prod AWS role trusts jobs in this environment alone.
+- `prod` environment: deploys only from protected branches, no required reviewer. The prod AWS role trusts jobs in this environment alone.
 - Branch protection on `main`: pull requests only, and the `merge-ok` check must pass. The check is bound to the GitHub Actions app, so a status of that name posted by any other integration does not count.
 - Actions: only GitHub-owned, verified-creator, `aws-actions/*`, `dorny/paths-filter` and `softprops/action-gh-release` actions may run, and every action must be pinned to a commit SHA. The pins, and the SAM CLI version in `.github/actions/install-sam`, are moved by hand, on purpose: there is no Dependabot, because an automatic bump is a change nothing here tests well enough to trust.
 - A tag ruleset blocks moving or deleting any tag, so release history stays intact. The release workflow only ever creates new ones.

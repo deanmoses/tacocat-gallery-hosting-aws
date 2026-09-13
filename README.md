@@ -77,7 +77,6 @@ You must submit a PR to change main.
 Prod hosts the files of <https://pix.tacocat.com>
 
 - Use the `Deploy to Production` GitHub Action to deploy to prod.  This will:
-  - Wait for you to approve the deploy: the `prod` GitHub environment requires a reviewer, so open the run and click _Review deployments_
   - Deploy to prod
   - Run integration tests
   - Create a release tag and release on GitHub
