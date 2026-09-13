@@ -98,12 +98,26 @@ Resources:
                                 - !Sub arn:aws:s3:::${StackPrefix}-dev-*
                                 - !Sub arn:aws:s3:::${StackPrefix}-dev-*/*
                           - Sid: HostingDistribution
-                            # CloudFront and Logs delivery resources have no name
-                            # pattern to scope by
+                            # CloudFront resources are identified by generated IDs,
+                            # so there is no name pattern to scope by
+                            Effect: Allow
+                            Action: cloudfront:*
+                            Resource: '*'
+                          - Sid: HostingLogDelivery
+                            # The delivery source and destination are named after
+                            # the stack; the delivery itself gets a generated ID
+                            Effect: Allow
+                            Action: logs:*
+                            Resource:
+                                - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:delivery-source:${StackPrefix}-dev-*
+                                - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:delivery-destination:${StackPrefix}-dev-*
+                                - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:delivery:*
+                          - Sid: ListLogDeliveries
+                            # The Describe and List calls take no resource
                             Effect: Allow
                             Action:
-                                - cloudfront:*
-                                - logs:*
+                                - logs:Describe*
+                                - logs:List*
                             Resource: '*'
                           - Sid: ViewerCertificate
                             # CloudFront checks the ACM certificate a distribution is given
@@ -150,9 +164,20 @@ Resources:
                                 - !Sub arn:aws:s3:::${StackPrefix}-prod-*/*
                           - Sid: HostingDistribution
                             Effect: Allow
+                            Action: cloudfront:*
+                            Resource: '*'
+                          - Sid: HostingLogDelivery
+                            Effect: Allow
+                            Action: logs:*
+                            Resource:
+                                - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:delivery-source:${StackPrefix}-prod-*
+                                - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:delivery-destination:${StackPrefix}-prod-*
+                                - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:delivery:*
+                          - Sid: ListLogDeliveries
+                            Effect: Allow
                             Action:
-                                - cloudfront:*
-                                - logs:*
+                                - logs:Describe*
+                                - logs:List*
                             Resource: '*'
                           - Sid: ViewerCertificate
                             Effect: Allow
