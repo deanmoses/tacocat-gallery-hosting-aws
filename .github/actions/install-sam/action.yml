@@ -1,0 +1,23 @@
+name: Install AWS SAM CLI
+description: >-
+    A pinned, checksum-verified SAM CLI. aws-actions/setup-sam with no version
+    downloads whatever release is latest and verifies nothing, in a job that
+    goes on to assume an AWS role.
+
+runs:
+    using: composite
+    steps:
+        - shell: bash
+          env:
+              SAM_VERSION: 1.166.2
+              SAM_SHA256: 4419ea4bb4ae1c69d2d41b346f77fdcd80099ae4ba9da7278e23427d54b05420
+          run: |
+              set -euo pipefail
+              cd "$(mktemp -d)"
+              curl -fsSL -o sam.zip \
+                "https://github.com/aws/aws-sam-cli/releases/download/v${SAM_VERSION}/aws-sam-cli-linux-x86_64.zip"
+              echo "${SAM_SHA256}  sam.zip" | sha256sum -c -
+              unzip -q sam.zip -d sam-installation
+              # --update: the runner image ships a SAM CLI of its own
+              sudo ./sam-installation/install --update
+              sam --version

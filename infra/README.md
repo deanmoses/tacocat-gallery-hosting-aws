@@ -22,7 +22,7 @@ Settings CI relies on that live in the repository's settings rather than in a fi
 
 - `prod` environment: requires a reviewer and deploys only from protected branches. The prod AWS role trusts jobs in this environment alone.
 - Branch protection on `main`: pull requests only, and the `merge-ok` check must pass.
-- Actions: only GitHub-owned, verified-creator, `aws-actions/*`, `dorny/paths-filter` and `softprops/action-gh-release` actions may run, and every action must be pinned to a commit SHA. The pins are moved by hand, on purpose: there is no Dependabot, because an automatic bump is a change nothing here tests well enough to trust.
+- Actions: only GitHub-owned, verified-creator, `aws-actions/*`, `dorny/paths-filter` and `softprops/action-gh-release` actions may run, and every action must be pinned to a commit SHA. The pins, and the SAM CLI version in `.github/actions/install-sam`, are moved by hand, on purpose: there is no Dependabot, because an automatic bump is a change nothing here tests well enough to trust.
 - Secret scanning and push protection are on. The pre-commit gitleaks scan only runs where gitleaks is installed; push protection is the backstop.
 
 ## Production stack

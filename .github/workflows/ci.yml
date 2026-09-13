@@ -85,10 +85,8 @@ jobs:
             - name: Checkout
               uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-            - name: Setup AWS SAM CLI
-              uses: aws-actions/setup-sam@89ddb14d60e682855e3fea4be85b3c56485de310 # v3
-              with:
-                  use-installer: true
+            - name: Install AWS SAM CLI
+              uses: ./.github/actions/install-sam
 
             - name: SAM build
               run: sam build
