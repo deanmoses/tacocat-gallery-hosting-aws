@@ -28,10 +28,10 @@ jobs:
         outputs:
             code_changed: ${{ steps.filter.outputs.code }}
         steps:
-            - uses: actions/checkout@v7
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
               with:
                   fetch-depth: 0 # on push, paths-filter diffs against the previous commit
-            - uses: dorny/paths-filter@v4
+            - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
               id: filter
               with:
                   predicate-quantifier: 'every'
@@ -83,10 +83,10 @@ jobs:
             id-token: write # lets the job request a GitHub OIDC token to assume an AWS role
         steps:
             - name: Checkout
-              uses: actions/checkout@v7
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
             - name: Setup AWS SAM CLI
-              uses: aws-actions/setup-sam@v3
+              uses: aws-actions/setup-sam@89ddb14d60e682855e3fea4be85b3c56485de310 # v3
               with:
                   use-installer: true
 
@@ -96,7 +96,7 @@ jobs:
             - name: Configure AWS credentials
               # No stored keys: the job trades its GitHub OIDC token for a short-lived AWS role.
               # Roles are defined in infra/github-oidc.yaml.
-              uses: aws-actions/configure-aws-credentials@v6
+              uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
               with:
                   role-to-assume: arn:aws:iam::010410881828:role/tacocat-gallery-website-hosting-cicd-github-main
                   role-session-name: github-${{ github.run_id }}

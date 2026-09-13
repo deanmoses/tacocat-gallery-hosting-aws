@@ -34,10 +34,10 @@ jobs:
             id-token: write # lets the job request a GitHub OIDC token to assume an AWS role
         steps:
             - name: Checkout
-              uses: actions/checkout@v7
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
             - name: Setup AWS SAM CLI
-              uses: aws-actions/setup-sam@v3
+              uses: aws-actions/setup-sam@89ddb14d60e682855e3fea4be85b3c56485de310 # v3
               with:
                   use-installer: true
 
@@ -47,7 +47,7 @@ jobs:
             - name: Configure AWS credentials
               # No stored keys: the job trades its GitHub OIDC token for a short-lived AWS role.
               # Roles are defined in infra/github-oidc.yaml.
-              uses: aws-actions/configure-aws-credentials@v6
+              uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
               with:
                   role-to-assume: arn:aws:iam::010410881828:role/tacocat-gallery-website-hosting-cicd-github-prod
                   role-session-name: github-${{ github.run_id }}
@@ -62,7 +62,7 @@ jobs:
         timeout-minutes: 10
         steps:
             - name: Checkout
-              uses: actions/checkout@v7
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
             - name: Run integration tests
               run: ./scripts/integration-tests.sh pix.tacocat.com
@@ -75,7 +75,7 @@ jobs:
             contents: write
         steps:
             - name: Checkout
-              uses: actions/checkout@v7
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
               with:
                   fetch-depth: 0
 
@@ -100,7 +100,7 @@ jobs:
                   git push origin "$new_tag"
 
             - name: Create GitHub Release
-              uses: softprops/action-gh-release@v3
+              uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
               with:
                   tag_name: ${{ steps.tag.outputs.tag }}
                   name: ${{ steps.tag.outputs.tag }}
