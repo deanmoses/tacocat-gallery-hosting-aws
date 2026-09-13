@@ -1,0 +1,20 @@
+{
+    "Statement": [
+        {
+            "Sid": "NeverReplaceOrDeleteTheSiteOrItsBucket",
+            "Effect": "Deny",
+            "Principal": "*",
+            "Action": ["Update:Replace", "Update:Delete"],
+            "Resource": [
+                "LogicalResourceId/WebsiteBucket",
+                "LogicalResourceId/CloudFrontDistribution"
+            ]
+        },
+        {
+            "Effect": "Allow",
+            "Principal": "*",
+            "Action": "Update:*",
+            "Resource": "*"
+        }
+    ]
+}

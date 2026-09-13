@@ -3,6 +3,9 @@ name: Build and Validate
 on:
     workflow_call:
 
+permissions:
+    contents: read
+
 env:
     HUSKY: 0 # Skip git hooks in CI
 
@@ -10,14 +13,17 @@ jobs:
     build-and-validate:
         runs-on: ubuntu-latest
         timeout-minutes: 15
+        permissions:
+            contents: read
+            id-token: write # lets the job request a GitHub OIDC token to assume an AWS role
         steps:
             - name: Checkout
-              uses: actions/checkout@v7
-
-            - name: Setup AWS SAM CLI
-              uses: aws-actions/setup-sam@v3
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
               with:
-                  use-installer: true
+                  persist-credentials: false
+
+            - name: Install AWS SAM CLI
+              uses: ./.github/actions/install-sam
 
             # Pinned and checksum-verified rather than installed from a script
             # piped to a shell, since this runs with the repo checked out.
@@ -45,10 +51,13 @@ jobs:
               run: sam build
 
             - name: Configure AWS credentials
-              uses: aws-actions/configure-aws-credentials@v6
+              # No stored keys: the job trades its GitHub OIDC token for a short-lived AWS role.
+              # Pull requests get a role that can only create (never execute) a change set on dev;
+              # runs on main get the deploy role. Roles are defined in infra/github-oidc.yaml.
+              uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
               with:
-                  aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-                  aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+                  role-to-assume: ${{ github.event_name == 'pull_request' && 'arn:aws:iam::010410881828:role/tacocat-gallery-website-hosting-cicd-github-pr' || 'arn:aws:iam::010410881828:role/tacocat-gallery-website-hosting-cicd-github-main' }}
+                  role-session-name: github-${{ github.run_id }}
                   aws-region: us-east-1
 
             - name: Validate changeset (dry-run)

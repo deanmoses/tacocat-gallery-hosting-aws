@@ -1,0 +1,407 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+    IAM roles that the tacocat-gallery-hosting-aws GitHub Actions workflows
+    assume, and the CloudFormation service roles that deploy the hosting
+    stacks. Deployed by hand, never by CI: CI cannot be the thing that creates
+    its own credentials. See infra/README.md.
+
+# -----------------------------------------------------------------------------
+# How the pieces fit together
+#
+#   GitHub Actions job ──(OIDC token)──▶ tacocat-gallery-website-hosting-cicd-github-{pr,main,prod}
+#                                              │
+#                                              │ iam:PassRole + cloudformation:*ChangeSet
+#                                              ▼
+#                                    tacocat-gallery-website-hosting-cicd-cloudformation-{dev,prod}
+#                                              │
+#                                              │ creates/updates every stack resource
+#                                              ▼
+#                                    tacocat-gallery-website-hosting-{dev,prod} stacks
+#
+# The three GitHub roles hold only what a `sam deploy` needs from the caller's
+# side: upload artifacts, create and (except for the PR role) execute change
+# sets on their own stack, and hand CloudFormation the service role for that
+# stack. The permissions that actually create buckets, distributions and log
+# deliveries live on the service roles, which only CloudFormation can assume.
+# There is one per environment, so nothing a dev deploy can do reaches the
+# prod buckets: a template can declare a bucket policy on any bucket it can
+# name. The integration tests are plain curl against the public site, so no
+# role needs anything beyond the deploy.
+#
+# The GitHub OIDC identity provider the roles trust is account-wide and lives
+# in https://github.com/deanmoses/aws-bootstrap. The same layout, with its own
+# roles, deploys https://github.com/deanmoses/tacocat-gallery-sam.
+#
+# Which role a job may assume is decided by the GitHub token's `sub` claim:
+#
+#   repo:ORG/REPO:pull_request          PR role    dry-run change set on dev
+#   repo:ORG/REPO:ref:refs/heads/main   main role  deploy dev (staging)
+#   repo:ORG/REPO:environment:prod      prod role  deploy prod (needs the environment's approval)
+# -----------------------------------------------------------------------------
+
+Parameters:
+    GitHubOrg:
+        Type: String
+        Default: deanmoses
+        Description: GitHub user or organization that owns the repository
+    GitHubRepo:
+        Type: String
+        Default: tacocat-gallery-hosting-aws
+        Description: GitHub repository name
+    ProdEnvironment:
+        Type: String
+        Default: prod
+        Description: Name of the GitHub environment that gates production deploys
+    StackPrefix:
+        Type: String
+        Default: tacocat-gallery-website-hosting
+        Description: Prefix of the hosting stack names, which are the prefix followed by -dev or -prod. Also the s3_prefix samconfig.toml uploads artifacts under, followed by /dev or /prod.
+    SamArtifactBucket:
+        Type: String
+        Default: aws-sam-cli-managed-default-samclisourcebucket-7tmt1e3o0r12
+        Description: The S3 bucket `sam deploy --resolve-s3` uploads build artifacts to (SourceBucket output of the aws-sam-cli-managed-default stack)
+
+Resources:
+    # ---------------------------------------------------------------------------
+    # CloudFormation service roles: do the actual resource creation
+    # ---------------------------------------------------------------------------
+    CloudFormationDeployRoleDev:
+        Type: AWS::IAM::Role
+        Properties:
+            RoleName: tacocat-gallery-website-hosting-cicd-cloudformation-dev
+            Description: Service role CloudFormation assumes to deploy the tacocat-gallery-website-hosting-dev stack
+            AssumeRolePolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                    - Effect: Allow
+                      Principal:
+                          Service: cloudformation.amazonaws.com
+                      Action: sts:AssumeRole
+                      Condition:
+                          StringEquals:
+                              aws:SourceAccount: !Ref AWS::AccountId
+                          ArnLike:
+                              aws:SourceArn: !Sub arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${StackPrefix}-dev/*
+            Policies:
+                - PolicyName: DeployDevHostingStack
+                  PolicyDocument:
+                      Version: '2012-10-17'
+                      Statement:
+                          # template.yaml creates nothing outside these three services:
+                          # S3 buckets and policies, the CloudFront distribution with
+                          # its function and policies, and the access log delivery.
+                          - Sid: HostingBuckets
+                            # Bucket names are ${AWS::StackName}-<suffix>
+                            Effect: Allow
+                            Action: s3:*
+                            Resource:
+                                - !Sub arn:aws:s3:::${StackPrefix}-dev-*
+                                - !Sub arn:aws:s3:::${StackPrefix}-dev-*/*
+                          - Sid: HostingDistribution
+                            # CloudFront resources are identified by generated IDs,
+                            # so there is no name pattern to scope by
+                            Effect: Allow
+                            Action: cloudfront:*
+                            Resource: '*'
+                          - Sid: HostingLogDelivery
+                            # The delivery source and destination are named after
+                            # the stack; the delivery itself gets a generated ID
+                            Effect: Allow
+                            Action: logs:*
+                            Resource:
+                                - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:delivery-source:${StackPrefix}-dev-*
+                                - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:delivery-destination:${StackPrefix}-dev-*
+                                - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:delivery:*
+                          - Sid: ListLogDeliveries
+                            # The Describe and List calls take no resource
+                            Effect: Allow
+                            Action:
+                                - logs:Describe*
+                                - logs:List*
+                            Resource: '*'
+                          - Sid: ViewerCertificate
+                            # CloudFront checks the ACM certificate a distribution is given
+                            Effect: Allow
+                            Action:
+                                - acm:ListCertificates
+                                - acm:DescribeCertificate
+                            Resource: '*'
+                          - Sid: SamTransform
+                            # CloudFormation expands the SAM transform as this role too,
+                            # so the caller's grant on the pseudo-resource is not enough
+                            Effect: Allow
+                            Action: cloudformation:CreateChangeSet
+                            Resource: !Sub arn:aws:cloudformation:${AWS::Region}:aws:transform/Serverless-2016-10-31
+
+    CloudFormationDeployRoleProd:
+        Type: AWS::IAM::Role
+        Properties:
+            RoleName: tacocat-gallery-website-hosting-cicd-cloudformation-prod
+            Description: Service role CloudFormation assumes to deploy the tacocat-gallery-website-hosting-prod stack
+            AssumeRolePolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                    - Effect: Allow
+                      Principal:
+                          Service: cloudformation.amazonaws.com
+                      Action: sts:AssumeRole
+                      Condition:
+                          StringEquals:
+                              aws:SourceAccount: !Ref AWS::AccountId
+                          ArnLike:
+                              aws:SourceArn: !Sub arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${StackPrefix}-prod/*
+            Policies:
+                - PolicyName: DeployProdHostingStack
+                  # Same grants as the dev role, on the prod buckets
+                  PolicyDocument:
+                      Version: '2012-10-17'
+                      Statement:
+                          - Sid: HostingBuckets
+                            Effect: Allow
+                            Action: s3:*
+                            Resource:
+                                - !Sub arn:aws:s3:::${StackPrefix}-prod-*
+                                - !Sub arn:aws:s3:::${StackPrefix}-prod-*/*
+                          - Sid: HostingDistribution
+                            Effect: Allow
+                            Action: cloudfront:*
+                            Resource: '*'
+                          - Sid: HostingLogDelivery
+                            Effect: Allow
+                            Action: logs:*
+                            Resource:
+                                - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:delivery-source:${StackPrefix}-prod-*
+                                - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:delivery-destination:${StackPrefix}-prod-*
+                                - !Sub arn:aws:logs:${AWS::Region}:${AWS::AccountId}:delivery:*
+                          - Sid: ListLogDeliveries
+                            Effect: Allow
+                            Action:
+                                - logs:Describe*
+                                - logs:List*
+                            Resource: '*'
+                          - Sid: ViewerCertificate
+                            Effect: Allow
+                            Action:
+                                - acm:ListCertificates
+                                - acm:DescribeCertificate
+                            Resource: '*'
+                          - Sid: SamTransform
+                            Effect: Allow
+                            Action: cloudformation:CreateChangeSet
+                            Resource: !Sub arn:aws:cloudformation:${AWS::Region}:aws:transform/Serverless-2016-10-31
+
+    # ---------------------------------------------------------------------------
+    # What every GitHub role needs to run `sam deploy` at all. The artifact
+    # objects and the service role to pass are per environment, so they are
+    # granted on each role below rather than here.
+    # ---------------------------------------------------------------------------
+    SamDeployPlumbingPolicy:
+        Type: AWS::IAM::ManagedPolicy
+        Properties:
+            # A changed Description replaces the policy, and a replacement
+            # cannot reuse the name, so bump the name whenever the text changes
+            ManagedPolicyName: tacocat-gallery-website-hosting-cicd-sam-plumbing
+            Description: Find and list the SAM artifact bucket, inspect templates, and expand the SAM transform
+            PolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                    - Sid: ListBuildArtifacts
+                      Effect: Allow
+                      Action:
+                          - s3:ListBucket
+                          - s3:GetBucketLocation
+                      Resource: !Sub arn:aws:s3:::${SamArtifactBucket}
+                    - Sid: FindTheArtifactBucket
+                      Effect: Allow
+                      Action:
+                          - cloudformation:DescribeStacks
+                      Resource: !Sub arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/aws-sam-cli-managed-default/*
+                    - Sid: TemplateInspection
+                      Effect: Allow
+                      Action:
+                          - cloudformation:GetTemplateSummary
+                          - cloudformation:ValidateTemplate
+                      Resource: '*'
+                    - Sid: SamTransform
+                      # Creating a change set for a template with a Transform needs
+                      # permission on the transform pseudo-resource too
+                      Effect: Allow
+                      Action: cloudformation:CreateChangeSet
+                      Resource: !Sub arn:aws:cloudformation:${AWS::Region}:aws:transform/Serverless-2016-10-31
+
+    # ---------------------------------------------------------------------------
+    # PR role: pull requests dry-run a change set against the dev stack
+    # ---------------------------------------------------------------------------
+    GitHubPullRequestRole:
+        Type: AWS::IAM::Role
+        Properties:
+            RoleName: tacocat-gallery-website-hosting-cicd-github-pr
+            Description: Assumed by pull request workflow runs to validate a change set against the dev stack without executing it
+            MaxSessionDuration: 3600
+            AssumeRolePolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                    - Effect: Allow
+                      Principal:
+                          Federated: !Sub arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
+                      Action: sts:AssumeRoleWithWebIdentity
+                      Condition:
+                          StringEquals:
+                              token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                              token.actions.githubusercontent.com:sub: !Sub repo:${GitHubOrg}/${GitHubRepo}:pull_request
+            ManagedPolicyArns:
+                - !Ref SamDeployPlumbingPolicy
+            Policies:
+                - PolicyName: DryRunChangeSetOnDev
+                  PolicyDocument:
+                      Version: '2012-10-17'
+                      Statement:
+                          - Sid: DevArtifacts
+                            Effect: Allow
+                            Action:
+                                - s3:GetObject
+                                - s3:PutObject
+                            Resource: !Sub arn:aws:s3:::${SamArtifactBucket}/${StackPrefix}/dev/*
+                          - Sid: HandCloudFormationTheDevRole
+                            Effect: Allow
+                            Action: iam:PassRole
+                            Resource: !GetAtt CloudFormationDeployRoleDev.Arn
+                            Condition:
+                                StringEquals:
+                                    iam:PassedToService: cloudformation.amazonaws.com
+                          - Sid: DevChangeSets
+                            Effect: Allow
+                            Action:
+                                - cloudformation:CreateChangeSet
+                                - cloudformation:DescribeChangeSet
+                                - cloudformation:DeleteChangeSet
+                                - cloudformation:DescribeStacks
+                                - cloudformation:DescribeStackEvents
+                                - cloudformation:GetTemplate
+                                - cloudformation:ListStackResources
+                            Resource: !Sub arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${StackPrefix}-dev/*
+
+    # ---------------------------------------------------------------------------
+    # Main role: pushes to main deploy dev (staging)
+    # ---------------------------------------------------------------------------
+    GitHubMainRole:
+        Type: AWS::IAM::Role
+        Properties:
+            RoleName: tacocat-gallery-website-hosting-cicd-github-main
+            Description: Assumed by workflow runs on the main branch to deploy the dev (staging) stack
+            MaxSessionDuration: 3600
+            AssumeRolePolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                    - Effect: Allow
+                      Principal:
+                          Federated: !Sub arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
+                      Action: sts:AssumeRoleWithWebIdentity
+                      Condition:
+                          StringEquals:
+                              token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                              token.actions.githubusercontent.com:sub: !Sub repo:${GitHubOrg}/${GitHubRepo}:ref:refs/heads/main
+            ManagedPolicyArns:
+                - !Ref SamDeployPlumbingPolicy
+            Policies:
+                - PolicyName: DeployDev
+                  PolicyDocument:
+                      Version: '2012-10-17'
+                      Statement:
+                          - Sid: DevArtifacts
+                            Effect: Allow
+                            Action:
+                                - s3:GetObject
+                                - s3:PutObject
+                            Resource: !Sub arn:aws:s3:::${SamArtifactBucket}/${StackPrefix}/dev/*
+                          - Sid: HandCloudFormationTheDevRole
+                            Effect: Allow
+                            Action: iam:PassRole
+                            Resource: !GetAtt CloudFormationDeployRoleDev.Arn
+                            Condition:
+                                StringEquals:
+                                    iam:PassedToService: cloudformation.amazonaws.com
+                          - Sid: DevStack
+                            Effect: Allow
+                            Action:
+                                - cloudformation:CreateChangeSet
+                                - cloudformation:DescribeChangeSet
+                                - cloudformation:ExecuteChangeSet
+                                - cloudformation:DeleteChangeSet
+                                - cloudformation:DescribeStacks
+                                - cloudformation:DescribeStackEvents
+                                - cloudformation:DescribeStackResources
+                                - cloudformation:GetTemplate
+                                - cloudformation:ListStackResources
+                            Resource: !Sub arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${StackPrefix}-dev/*
+
+    # ---------------------------------------------------------------------------
+    # Prod role: only a job running inside the approved `prod` environment
+    # ---------------------------------------------------------------------------
+    GitHubProdRole:
+        Type: AWS::IAM::Role
+        Properties:
+            RoleName: tacocat-gallery-website-hosting-cicd-github-prod
+            Description: Assumed by the production deploy job, which runs inside the GitHub environment that requires a reviewer's approval
+            MaxSessionDuration: 3600
+            AssumeRolePolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                    - Effect: Allow
+                      Principal:
+                          Federated: !Sub arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com
+                      Action: sts:AssumeRoleWithWebIdentity
+                      Condition:
+                          StringEquals:
+                              token.actions.githubusercontent.com:aud: sts.amazonaws.com
+                              token.actions.githubusercontent.com:sub: !Sub repo:${GitHubOrg}/${GitHubRepo}:environment:${ProdEnvironment}
+            ManagedPolicyArns:
+                - !Ref SamDeployPlumbingPolicy
+            Policies:
+                - PolicyName: DeployProd
+                  PolicyDocument:
+                      Version: '2012-10-17'
+                      Statement:
+                          - Sid: ProdArtifacts
+                            Effect: Allow
+                            Action:
+                                - s3:GetObject
+                                - s3:PutObject
+                            Resource: !Sub arn:aws:s3:::${SamArtifactBucket}/${StackPrefix}/prod/*
+                          - Sid: HandCloudFormationTheProdRole
+                            Effect: Allow
+                            Action: iam:PassRole
+                            Resource: !GetAtt CloudFormationDeployRoleProd.Arn
+                            Condition:
+                                StringEquals:
+                                    iam:PassedToService: cloudformation.amazonaws.com
+                          - Sid: ProdStack
+                            Effect: Allow
+                            Action:
+                                - cloudformation:CreateChangeSet
+                                - cloudformation:DescribeChangeSet
+                                - cloudformation:ExecuteChangeSet
+                                - cloudformation:DeleteChangeSet
+                                - cloudformation:DescribeStacks
+                                - cloudformation:DescribeStackEvents
+                                - cloudformation:DescribeStackResources
+                                - cloudformation:GetTemplate
+                                - cloudformation:ListStackResources
+                            Resource: !Sub arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${StackPrefix}-prod/*
+
+Outputs:
+    CloudFormationDeployRoleDevArn:
+        Description: role_arn for the default (dev) environment in samconfig.toml
+        Value: !GetAtt CloudFormationDeployRoleDev.Arn
+    CloudFormationDeployRoleProdArn:
+        Description: role_arn for the prod environment in samconfig.toml
+        Value: !GetAtt CloudFormationDeployRoleProd.Arn
+    GitHubPullRequestRoleArn:
+        Description: role-to-assume for pull request runs
+        Value: !GetAtt GitHubPullRequestRole.Arn
+    GitHubMainRoleArn:
+        Description: role-to-assume for runs on main
+        Value: !GetAtt GitHubMainRole.Arn
+    GitHubProdRoleArn:
+        Description: role-to-assume for the prod deploy job
+        Value: !GetAtt GitHubProdRole.Arn

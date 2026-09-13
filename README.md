@@ -67,6 +67,7 @@ You must submit a PR to change main.
 
 - Committing will:
   - Run precommit checks: `scripts/lint.sh` (SAM template, CloudFront Function JavaScript, shell scripts, GitHub Actions), secret scanner.
+- The PR's `merge-ok` check must pass before it can be merged. Docs-only PRs skip the build and pass it straight away.
 - Merging a PR will:
   - Deploy to dev / staging
   - Run integration tests
@@ -76,9 +77,14 @@ You must submit a PR to change main.
 Prod hosts the files of <https://pix.tacocat.com>
 
 - Use the `Deploy to Production` GitHub Action to deploy to prod.  This will:
+  - Wait for you to approve the deploy: the `prod` GitHub environment requires a reviewer, so open the run and click _Review deployments_
   - Deploy to prod
   - Run integration tests
   - Create a release tag and release on GitHub
 - Then you can either:
   - Hit <https://pix.tacocat.com> and validate that the web app is still being served correctly.
   - Go to the project that builds the actual website assets and deploy it to this infrastructure.
+
+## CI credentials
+
+CI never holds AWS keys. Each workflow job exchanges its GitHub OIDC token for a short-lived AWS role scoped to what that job does; see [infra/README.md](infra/README.md).

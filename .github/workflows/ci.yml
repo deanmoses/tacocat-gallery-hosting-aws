@@ -3,51 +3,110 @@ name: CI
 on:
     push:
         branches: [main]
-        paths-ignore:
-            - '*.md'
-            - 'LICENSE'
-            - '.gitignore'
     pull_request:
         branches: [main]
-        paths-ignore:
-            - '*.md'
-            - 'LICENSE'
-            - '.gitignore'
 
 concurrency:
     group: ${{ github.workflow }}-${{ github.ref }}
     cancel-in-progress: true
 
+permissions:
+    contents: read
+
 env:
     HUSKY: 0 # Skip git hooks in CI
 
 jobs:
+    # Docs-only changes skip the build and the deploy. A `paths-ignore` on the
+    # trigger would do that too, but a run that never starts never reports,
+    # and branch protection needs a check that always does: merge-ok below.
+    detect-code-changes:
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            pull-requests: read # paths-filter lists a pull request's files through the API
+        outputs:
+            code_changed: ${{ steps.filter.outputs.code }}
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+              with:
+                  persist-credentials: false
+                  fetch-depth: 0 # on push, paths-filter diffs against the previous commit
+            - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+              id: filter
+              with:
+                  predicate-quantifier: 'every'
+                  filters: |
+                      code:
+                        - '**'
+                        - '!**/*.md'
+                        - '!LICENSE'
+                        - '!.gitignore'
+
     build-and-validate:
+        needs: detect-code-changes
+        if: ${{ needs.detect-code-changes.outputs.code_changed == 'true' }}
         uses: ./.github/workflows/build-and-validate.yml
-        secrets: inherit
+        permissions:
+            contents: read
+            id-token: write # a called workflow can hold at most the permissions the caller grants
+
+    # The check branch protection requires. Passes when the detector said
+    # there were no code changes (so the build was rightly skipped) or the
+    # build succeeded. Anything else, including a detector that answered
+    # nothing at all, fails: this must not fail open.
+    merge-ok:
+        needs: [detect-code-changes, build-and-validate]
+        if: always()
+        runs-on: ubuntu-latest
+        steps:
+            - name: Check required jobs
+              run: |
+                  if [[ "${{ needs.detect-code-changes.result }}" != "success" ]]; then
+                      echo "detect-code-changes failed (result: ${{ needs.detect-code-changes.result }})"
+                      exit 1
+                  fi
+                  if [[ "${{ needs.detect-code-changes.outputs.code_changed }}" == "false" ]]; then
+                      echo "No code changes, build skipped"
+                      exit 0
+                  fi
+                  if [[ "${{ needs.detect-code-changes.outputs.code_changed }}" != "true" ]]; then
+                      echo "Unexpected code_changed value: '${{ needs.detect-code-changes.outputs.code_changed }}'"
+                      exit 1
+                  fi
+                  if [[ "${{ needs.build-and-validate.result }}" != "success" ]]; then
+                      echo "Code changed but the build did not succeed (result: ${{ needs.build-and-validate.result }})"
+                      exit 1
+                  fi
+                  echo "Code changed and the build passed"
 
     deploy:
         needs: build-and-validate
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         runs-on: ubuntu-latest
         timeout-minutes: 20
+        permissions:
+            contents: read
+            id-token: write # lets the job request a GitHub OIDC token to assume an AWS role
         steps:
             - name: Checkout
-              uses: actions/checkout@v7
-
-            - name: Setup AWS SAM CLI
-              uses: aws-actions/setup-sam@v3
+              uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
               with:
-                  use-installer: true
+                  persist-credentials: false
+
+            - name: Install AWS SAM CLI
+              uses: ./.github/actions/install-sam
 
             - name: SAM build
               run: sam build
 
             - name: Configure AWS credentials
-              uses: aws-actions/configure-aws-credentials@v6
+              # No stored keys: the job trades its GitHub OIDC token for a short-lived AWS role.
+              # Roles are defined in infra/github-oidc.yaml.
+              uses: aws-actions/configure-aws-credentials@cbe3b392738ccf3f987d68400dafcf4b0624a56c # v6.2.4
               with:
-                  aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-                  aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+                  role-to-assume: arn:aws:iam::010410881828:role/tacocat-gallery-website-hosting-cicd-github-main
+                  role-session-name: github-${{ github.run_id }}
                   aws-region: us-east-1
 
             - name: Deploy to staging

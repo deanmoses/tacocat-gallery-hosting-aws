@@ -55,6 +55,14 @@ if require sam; then
     report "$?" "$OUT"
 fi
 
+# The CI/CD IAM roles are plain CloudFormation, deployed by hand (see
+# infra/README.md), so nothing else ever validates them before they run.
+echo -n "Lint: CI/CD IAM template (cfn-lint)... "
+if require sam; then
+    OUT=$(cd "$DIR" && sam validate --lint --template infra/github-oidc.yaml 2>&1)
+    report "$?" "$OUT"
+fi
+
 # -----------------------------------------------------------------------------
 # CloudFront Function JavaScript
 # -----------------------------------------------------------------------------
