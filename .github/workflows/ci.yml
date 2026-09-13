@@ -3,16 +3,8 @@ name: CI
 on:
     push:
         branches: [main]
-        paths-ignore:
-            - '*.md'
-            - 'LICENSE'
-            - '.gitignore'
     pull_request:
         branches: [main]
-        paths-ignore:
-            - '*.md'
-            - 'LICENSE'
-            - '.gitignore'
 
 concurrency:
     group: ${{ github.workflow }}-${{ github.ref }}
@@ -25,11 +17,61 @@ env:
     HUSKY: 0 # Skip git hooks in CI
 
 jobs:
+    # Docs-only changes skip the build and the deploy. A `paths-ignore` on the
+    # trigger would do that too, but a run that never starts never reports,
+    # and branch protection needs a check that always does: merge-ok below.
+    detect-code-changes:
+        runs-on: ubuntu-latest
+        permissions:
+            contents: read
+            pull-requests: read # paths-filter lists a pull request's files through the API
+        outputs:
+            code_changed: ${{ steps.filter.outputs.code }}
+        steps:
+            - uses: actions/checkout@v7
+              with:
+                  fetch-depth: 0 # on push, paths-filter diffs against the previous commit
+            - uses: dorny/paths-filter@v4
+              id: filter
+              with:
+                  predicate-quantifier: 'every'
+                  filters: |
+                      code:
+                        - '**'
+                        - '!**/*.md'
+                        - '!LICENSE'
+                        - '!.gitignore'
+
     build-and-validate:
+        needs: detect-code-changes
+        if: ${{ needs.detect-code-changes.outputs.code_changed == 'true' }}
         uses: ./.github/workflows/build-and-validate.yml
         permissions:
             contents: read
             id-token: write # a called workflow can hold at most the permissions the caller grants
+
+    # The check branch protection requires. Passes when there were no code
+    # changes (so the build was rightly skipped) or the build succeeded.
+    merge-ok:
+        needs: [detect-code-changes, build-and-validate]
+        if: always()
+        runs-on: ubuntu-latest
+        steps:
+            - name: Check required jobs
+              run: |
+                  if [[ "${{ needs.detect-code-changes.result }}" != "success" ]]; then
+                      echo "detect-code-changes failed (result: ${{ needs.detect-code-changes.result }})"
+                      exit 1
+                  fi
+                  if [[ "${{ needs.detect-code-changes.outputs.code_changed }}" != "true" ]]; then
+                      echo "No code changes, build skipped"
+                      exit 0
+                  fi
+                  if [[ "${{ needs.build-and-validate.result }}" != "success" ]]; then
+                      echo "Code changed but the build did not succeed (result: ${{ needs.build-and-validate.result }})"
+                      exit 1
+                  fi
+                  echo "Code changed and the build passed"
 
     deploy:
         needs: build-and-validate

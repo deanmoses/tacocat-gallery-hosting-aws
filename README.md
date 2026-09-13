@@ -67,6 +67,7 @@ You must submit a PR to change main.
 
 - Committing will:
   - Run precommit checks: `scripts/lint.sh` (SAM template, CloudFront Function JavaScript, shell scripts, GitHub Actions), secret scanner.
+- The PR's `merge-ok` check must pass before it can be merged. Docs-only PRs skip the build and pass it straight away.
 - Merging a PR will:
   - Deploy to dev / staging
   - Run integration tests
