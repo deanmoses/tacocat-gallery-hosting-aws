@@ -90,11 +90,20 @@ Resources:
                           # template.yaml creates nothing outside these three services:
                           # S3 buckets and policies, the CloudFront distribution with
                           # its function and policies, and the access log delivery.
-                          - Sid: HostingResources
+                          - Sid: HostingBuckets
+                            # Bucket names are ${AWS::StackName}-<suffix>, so this
+                            # cannot reach the other projects' buckets
+                            Effect: Allow
+                            Action: s3:*
+                            Resource:
+                                - !Sub arn:aws:s3:::${StackPrefix}-*
+                                - !Sub arn:aws:s3:::${StackPrefix}-*/*
+                          - Sid: HostingDistribution
+                            # CloudFront and Logs delivery resources have no name
+                            # pattern to scope by
                             Effect: Allow
                             Action:
                                 - cloudfront:*
-                                - s3:*
                                 - logs:*
                             Resource: '*'
                           - Sid: ViewerCertificate
