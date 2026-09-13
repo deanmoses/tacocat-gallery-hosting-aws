@@ -51,8 +51,10 @@ jobs:
             contents: read
             id-token: write # a called workflow can hold at most the permissions the caller grants
 
-    # The check branch protection requires. Passes when there were no code
-    # changes (so the build was rightly skipped) or the build succeeded.
+    # The check branch protection requires. Passes when the detector said
+    # there were no code changes (so the build was rightly skipped) or the
+    # build succeeded. Anything else, including a detector that answered
+    # nothing at all, fails: this must not fail open.
     merge-ok:
         needs: [detect-code-changes, build-and-validate]
         if: always()
@@ -64,9 +66,13 @@ jobs:
                       echo "detect-code-changes failed (result: ${{ needs.detect-code-changes.result }})"
                       exit 1
                   fi
-                  if [[ "${{ needs.detect-code-changes.outputs.code_changed }}" != "true" ]]; then
+                  if [[ "${{ needs.detect-code-changes.outputs.code_changed }}" == "false" ]]; then
                       echo "No code changes, build skipped"
                       exit 0
+                  fi
+                  if [[ "${{ needs.detect-code-changes.outputs.code_changed }}" != "true" ]]; then
+                      echo "Unexpected code_changed value: '${{ needs.detect-code-changes.outputs.code_changed }}'"
+                      exit 1
                   fi
                   if [[ "${{ needs.build-and-validate.result }}" != "success" ]]; then
                       echo "Code changed but the build did not succeed (result: ${{ needs.build-and-validate.result }})"
