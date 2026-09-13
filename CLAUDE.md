@@ -56,3 +56,5 @@ sam sync            # Deploys to dev / staging (hosts the files of staging-pix.t
 ## Observability
 
 Logging is configured through CloudWatch Logs delivery resources in `template.yaml`, not the distribution's own `Logging` block, so `aws cloudfront get-distribution-config` and the console both report logging disabled while logs are flowing — `aws logs describe-delivery-sources` is what answers that. Delivery lags requests by ten minutes to a few hours.
+
+The access logs are pulled into a DuckDB analytics system for incident, behavior and performance questions, see [production_logs](https://github.com/deanmoses/tacocat-gallery-sveltekit/blob/main/production_logs/README.md).
