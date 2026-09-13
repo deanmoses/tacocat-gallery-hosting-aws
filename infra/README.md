@@ -23,12 +23,23 @@ Settings CI relies on that live in the repository's settings rather than in a fi
 - `prod` environment: requires a reviewer and deploys only from protected branches. The prod AWS role trusts jobs in this environment alone.
 - Branch protection on `main`: pull requests only, and the `merge-ok` check must pass.
 - Actions: only GitHub-owned, verified-creator, `aws-actions/*`, `dorny/paths-filter` and `softprops/action-gh-release` actions may run, and every action must be pinned to a commit SHA. The pins, and the SAM CLI version in `.github/actions/install-sam`, are moved by hand, on purpose: there is no Dependabot, because an automatic bump is a change nothing here tests well enough to trust.
+- A tag ruleset blocks moving or deleting any tag, so release history stays intact. The release workflow only ever creates new ones.
 - Secret scanning and push protection are on. The pre-commit gitleaks scan only runs where gitleaks is installed; push protection is the backstop.
 
 ## Production stack
 
-Termination protection is enabled by hand on `tacocat-gallery-website-hosting-prod`. The prod CI role cannot delete stacks anyway; this guards against a slip with admin credentials.
+Two guards are applied by hand. The prod CI role can call neither `UpdateTerminationProtection` nor `SetStackPolicy`, so a deploy cannot loosen them.
+
+Termination protection stops the stack itself being deleted:
 
 ```bash
 aws cloudformation update-termination-protection --enable-termination-protection --stack-name tacocat-gallery-website-hosting-prod
 ```
+
+The stack policy in [prod-stack-policy.json](prod-stack-policy.json) stops an update from replacing or deleting the site bucket or the distribution, which is what a template edit to one of their immutable properties would otherwise do:
+
+```bash
+aws cloudformation set-stack-policy --stack-name tacocat-gallery-website-hosting-prod --stack-policy-body file://infra/prod-stack-policy.json
+```
+
+A deploy that has to replace one of them on purpose first sets a policy allowing `Update:*` on `*`, deploys, then reapplies this one.
