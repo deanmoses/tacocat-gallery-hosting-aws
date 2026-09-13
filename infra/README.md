@@ -24,3 +24,11 @@ Settings CI relies on that live in the repository's settings rather than in a fi
 - Branch protection on `main`: pull requests only, and the `merge-ok` check must pass.
 - Actions: only GitHub-owned, verified-creator, `aws-actions/*`, `dorny/paths-filter` and `softprops/action-gh-release` actions may run, and every action must be pinned to a commit SHA. The pins are moved by hand, on purpose: there is no Dependabot, because an automatic bump is a change nothing here tests well enough to trust.
 - Secret scanning and push protection are on. The pre-commit gitleaks scan only runs where gitleaks is installed; push protection is the backstop.
+
+## Production stack
+
+Termination protection is enabled by hand on `tacocat-gallery-website-hosting-prod`. The prod CI role cannot delete stacks anyway; this guards against a slip with admin credentials.
+
+```bash
+aws cloudformation update-termination-protection --enable-termination-protection --stack-name tacocat-gallery-website-hosting-prod
+```
