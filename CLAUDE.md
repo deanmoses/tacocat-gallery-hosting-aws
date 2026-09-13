@@ -50,7 +50,7 @@ sam sync            # Deploys to dev / staging (hosts the files of staging-pix.t
 
 - **Pre-commit hooks**: Husky runs `scripts/lint.sh` and gitleaks secret scanning on commit.
 - **CI workflow**: on PR and push to main, runs lint, build, and changeset validation; docs-only changes skip all of that. The `merge-ok` check is required to merge. On push to main, also deploys to staging and runs integration tests.
-- **Production deploy**: production deployments are done by manually triggering a GitHub Action.  Waits for approval in the `prod` GitHub environment, deploys to prod, runs integration tests, creates a release tag and generates release notes.
+- **Production deploy**: production deployments are done by manually triggering a GitHub Action.  Deploys to prod, runs integration tests, creates a release tag and generates release notes.
 - **CI credentials**: no AWS keys are stored in GitHub. Each job exchanges its GitHub OIDC token for a short-lived IAM role scoped to what that job does (pull request, main, prod), see `infra/README.md`.
 
 ## Observability
