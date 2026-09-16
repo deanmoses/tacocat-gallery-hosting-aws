@@ -16,6 +16,16 @@ The role ARNs are stable, so the workflows and `samconfig.toml` reference them d
 
 There are no AWS secrets in the GitHub repository. A workflow job gets a short-lived credential by presenting its OIDC token, and which role it may assume is decided by the token's `sub` claim: pull requests, runs on `main`, or the `prod` GitHub environment. The `prod` environment is configured in the repository settings to deploy only from protected branches, of which `main` is the only one. It has no required reviewer: the pull request into `main` is the review.
 
+## Claude Code on the web
+
+The same template gives a cloud session what it needs in this project: deploy the dev stack, and read both environments' CloudFront access logs out of the bucket they are delivered to. That is the reach the `main` CI role has, plus the logs no CI job needs. Prod logs are included, because an incident is when you most want them and reading a log changes nothing. Deploying to prod is out of reach under an explicit `Deny`.
+
+It also grants the three `logs:DescribeDeliver*` calls. Logging here is configured through delivery resources rather than the distribution's own `Logging` block, so the console and `get-distribution-config` both report it disabled while logs are flowing, and those calls are the only way to tell.
+
+A session authenticates as one IAM user for the whole account, `tacocat-gallery-claude-code-cloud`, and that user is created by the [tacocat-gallery-sam](https://github.com/deanmoses/tacocat-gallery-sam) repo's `infra/`. **That stack has to be deployed before this one**, or the policy here has no user to attach to and the deploy fails. What the user may do in this project is still decided here: this template attaches its own managed policy, so the permissions live with the project rather than accumulating in another repo's template. The other Tacocat repos do the same.
+
+One thing to watch when adding another repo to that arrangement: AWS allows ten managed policies per IAM user by default. This template attaches two of them.
+
 ## GitHub repository settings
 
 Settings CI relies on that live in the repository's settings rather than in a file here:
