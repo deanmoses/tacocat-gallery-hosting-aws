@@ -24,7 +24,8 @@ sam sync            # Deploys to dev / staging (hosts the files of staging-pix.t
 - S3 bucket stores static assets (HTML, CSS, JS, images)
 - CloudFront distribution serves content with HTTPS
 - Origin Access Control (OAC) restricts S3 access to CloudFront only
-- Custom error responses return index.html for SPA routing (404/403 → 200 with index.html)
+- A viewer-request CloudFront Function serves index.html for every path that is not one of the site's files, which is how SPA deep links load the app
+- The gallery API is served on the same domain as `/api/*`, from an API Gateway origin in the `tacocat-gallery-sam` project. Album responses are cached at the edge when the `CacheAlbumResponses` parameter is on, using the function and policies that project exports
 - Access logs delivered to a dedicated S3 bucket, expiring after 90 days (see Observability)
 - `X-Robots-Tag` and `tdm-reservation` response headers opt out of indexing and AI training
 - HSTS (1 year, `includeSubDomains`, no preload), `nosniff`, `Referrer-Policy`, `X-Frame-Options: DENY` and `Permissions-Policy`. `includeSubDomains` binds `img.`/`api.`/`auth.` — a new subdomain must be HTTPS from day one
@@ -33,7 +34,9 @@ sam sync            # Deploys to dev / staging (hosts the files of staging-pix.t
 
 - `/_app/immutable/*`: 1-year cache with immutable headers (SvelteKit build output)
 - `/robots.txt`: Served by CloudFront Function
-- Default: Standard CloudFront caching
+- `/api/album*`: the album API, cached on the album's version when `CacheAlbumResponses` is on, uncached otherwise
+- `/api/*`: the rest of the API, uncached
+- Default: Standard CloudFront caching, with the SPA routing function
 
 ### Environments
 
@@ -43,7 +46,7 @@ sam sync            # Deploys to dev / staging (hosts the files of staging-pix.t
 ## Key Files
 
 - `template.yaml` - All AWS resources (S3, CloudFront, policies, inline CloudFront Function for robots.txt, access log delivery)
-- `samconfig.toml` - SAM CLI config with dev/prod parameters
+- `samconfig.toml` - SAM CLI config with dev/prod parameters, including which API stack `/api/*` serves and whether albums are cached
 - `infra/github-oidc.yaml` - IAM roles CI assumes and the per-environment CloudFormation service roles that deploy the stacks. Deployed by hand, see `infra/README.md`
 
 ## CI/CD

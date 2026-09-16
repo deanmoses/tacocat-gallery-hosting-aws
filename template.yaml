@@ -34,12 +34,24 @@ Parameters:
     AllowedValues:
       - arn:aws:acm:us-east-1:010410881828:certificate/092ab57c-f87d-4c44-a72c-63cfbbb55800 # staging-pix.tacocat.com
       - arn:aws:acm:us-east-1:010410881828:certificate/e142cda0-96db-4651-92fd-35dd9a52e9a2 # pix.tacocat.com
+  GalleryApiStackName:
+    Description: The tacocat-gallery-sam stack whose API this site serves as /api/*
+    Type: String
+    AllowedValues:
+      - tacocat-gallery-sam-dev
+      - tacocat-gallery-sam-prod
+  CacheAlbumResponses:
+    Description: Cache album API responses at the edge, keyed on the versions the API stack keeps. Off until promoted.
+    Type: String
+    AllowedValues: [ "true", "false" ]
+    Default: "false"
 
 # -----------------------------------------------------------------------------
 # Conditions
 # -----------------------------------------------------------------------------
 Conditions:
   IsProd: !Equals [ !Ref GalleryAppDomain, "pix.tacocat.com" ]
+  CacheAlbums: !Equals [ !Ref CacheAlbumResponses, "true" ]
 
 # -----------------------------------------------------------------------------
 # Resources are the actual assets that will be provisioned on AWS
@@ -136,6 +148,36 @@ Resources:
         Comment: "Serves robots.txt; crawling allowed so the noindex is seen"
         Runtime: cloudfront-js-2.0
 
+  # Routes the SPA: any path that is not one of the site's own files is served
+  # as index.html, so a deep link like /2001/12-31 or /2001/12-31/photo.jpg
+  # loads the app, which reads the path. Done here rather than by mapping S3's
+  # 403 to index.html distribution-wide, which would turn the API's own error
+  # responses into the app's HTML too. Every deep link is then one cached
+  # object, /index.html.
+  SpaRoutingFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: !Sub ${AWS::StackName}-spa-routing
+      AutoPublish: true
+      FunctionCode: |
+        // The files the site's build deploys to the bucket, and nothing else
+        var STATIC_PREFIXES = ['/_app/', '/images/', '/.well-known/'];
+        var STATIC_FILES = ['/index.html', '/favicon.ico', '/manifest.json', '/service-worker.js'];
+
+        function handler(event) {
+          var request = event.request;
+          var uri = request.uri;
+          for (var i = 0; i < STATIC_PREFIXES.length; i++) {
+            if (uri.indexOf(STATIC_PREFIXES[i]) === 0) return request;
+          }
+          if (STATIC_FILES.indexOf(uri) !== -1) return request;
+          request.uri = '/index.html';
+          return request;
+        }
+      FunctionConfig:
+        Comment: "Serves index.html for every path that is not one of the site's files"
+        Runtime: cloudfront-js-2.0
+
   # -----------------------------------------------------------------------------
   # S3 bucket to host single page app (SPA) website
   # -----------------------------------------------------------------------------
@@ -227,23 +269,26 @@ Resources:
           AcmCertificateArn: !Ref DomainCertificateArn
           SslSupportMethod: sni-only
           MinimumProtocolVersion: TLSv1.2_2021
-        # These custom error responses are needed to support single page apps
-        # When a user requests a path that doesn't physically exist such as
-        # /2001/12-31/, S3 will return a 404 (actually a 403).  This tells 
-        # CloudFront to return index.html instead of that error.
-        CustomErrorResponses:
-          - ErrorCode: 404
-            ResponseCode: 200
-            ResponsePagePath: /index.html
-          - ErrorCode: 403
-            ResponseCode: 200
-            ResponsePagePath: /index.html
         Origins:
         - Id: S3Origin
           DomainName: !GetAtt WebsiteBucket.RegionalDomainName
           OriginAccessControlId: !GetAtt CloudFrontOriginAccessControl.Id
           S3OriginConfig:
             OriginAccessIdentity: ""
+        # The gallery API, served to the app as /api/* on this domain. The API
+        # Gateway custom domain maps /api to its stage, so the path passes
+        # through unchanged.
+        - Id: ApiOrigin
+          DomainName: !Sub api.${GalleryAppDomain}
+          CustomOriginConfig:
+            OriginProtocolPolicy: https-only
+            OriginSSLProtocols:
+              - TLSv1.2
+            # The ceiling without a limit increase. At this traffic level the
+            # edge's connection to the region has usually lapsed by the next
+            # request that reaches the origin, and that cold handshake is what
+            # a miss costs.
+            OriginKeepaliveTimeout: 60
         CacheBehaviors:
           - PathPattern: /_app/immutable/*
             TargetOriginId: S3Origin
@@ -269,6 +314,44 @@ Resources:
             FunctionAssociations:
               - EventType: viewer-request
                 FunctionARN: !GetAtt RobotsTxtFunction.FunctionMetadata.FunctionARN
+          # The album API, cached at the edge when CacheAlbumResponses is on:
+          # the API stack's function keys each request on the album's version,
+          # and its policies set the cache key and what reaches the origin.
+          # Every method, so the write endpoints sharing these paths keep
+          # working; CloudFront only ever caches the GETs and HEADs. The
+          # pattern also catches /api/album (the root album) and the
+          # album-* write endpoints, which the function leaves alone and the
+          # origin answers no-store, so they pass through like the rest.
+          - PathPattern: /api/album*
+            TargetOriginId: ApiOrigin
+            Compress: true
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [ GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE ]
+            CachedMethods: [ GET, HEAD ]
+            CachePolicyId: !If
+              - CacheAlbums
+              - Fn::ImportValue: !Sub ${GalleryApiStackName}-ApiAlbumCachePolicyId
+              - 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # CachingDisabled managed policy
+            OriginRequestPolicyId: !If
+              - CacheAlbums
+              - Fn::ImportValue: !Sub ${GalleryApiStackName}-ApiAlbumOriginRequestPolicyId
+              - b689b0a8-53d0-40ab-baf2-68738e2966ac # AllViewerExceptHostHeader managed policy
+            FunctionAssociations: !If
+              - CacheAlbums
+              - - EventType: viewer-request
+                  FunctionARN:
+                    Fn::ImportValue: !Sub ${GalleryApiStackName}-AlbumVersionFunctionArn
+              - !Ref AWS::NoValue
+          # The rest of the API passes through uncached, with every viewer
+          # header but Host, which must be the API's own hostname. The origin
+          # compresses; CloudFront only compresses what it caches.
+          - PathPattern: /api/*
+            TargetOriginId: ApiOrigin
+            ViewerProtocolPolicy: redirect-to-https
+            AllowedMethods: [ GET, HEAD, OPTIONS, PUT, PATCH, POST, DELETE ]
+            CachedMethods: [ GET, HEAD ]
+            CachePolicyId: 4135ea2d-6df8-44a3-9df3-4b5a84be39ad # CachingDisabled managed policy
+            OriginRequestPolicyId: b689b0a8-53d0-40ab-baf2-68738e2966ac # AllViewerExceptHostHeader managed policy
         DefaultCacheBehavior:
           TargetOriginId: S3Origin
           Compress: true
@@ -282,6 +365,9 @@ Resources:
           CachedMethods:
           - GET
           - HEAD
+          FunctionAssociations:
+            - EventType: viewer-request
+              FunctionARN: !GetAtt SpaRoutingFunction.FunctionMetadata.FunctionARN
 
   CloudFrontOriginAccessControl:
     Type: AWS::CloudFront::OriginAccessControl

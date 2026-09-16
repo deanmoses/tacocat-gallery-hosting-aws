@@ -66,13 +66,27 @@ else
     FAILED=1
 fi
 
-# Test 3: SPA routing works (unknown path returns 200 with index.html)
-echo -n "Test: SPA routing returns 200 for unknown paths... "
+# Test 3: SPA routing works (a deep link is served index.html), including one
+# that looks like a file, which is what every media page's URL looks like
+echo -n "Test: SPA routing returns 200 for deep links... "
 STATUS=$(curl "${CURL_OPTS[@]}" -o /dev/null -w "%{http_code}" "https://$DOMAIN/2024/01-01/nonexistent")
-if [ "$STATUS" = "200" ]; then
+MEDIA_STATUS=$(curl "${CURL_OPTS[@]}" -o /dev/null -w "%{http_code}" "https://$DOMAIN/2024/01-01/nonexistent.jpg")
+if [ "$STATUS" = "200" ] && [ "$MEDIA_STATUS" = "200" ]; then
     echo -e "${GREEN}PASS${NC}"
 else
-    echo -e "${RED}FAIL (got $STATUS)${NC}"
+    echo -e "${RED}FAIL (got $STATUS and $MEDIA_STATUS)${NC}"
+    FAILED=1
+fi
+
+# Test 3b: a missing file the site would have deployed is an error, not the app.
+# The routing function serves index.html for app routes only; if this returns
+# 200, the allowlist has stopped matching what the build deploys.
+echo -n "Test: a missing static file is not served as index.html... "
+STATUS=$(curl "${CURL_OPTS[@]}" -o /dev/null -w "%{http_code}" "https://$DOMAIN/images/nonexistent.png")
+if [ "$STATUS" = "403" ] || [ "$STATUS" = "404" ]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL (expected 403/404, got $STATUS)${NC}"
     FAILED=1
 fi
 
@@ -165,11 +179,8 @@ else
     FAILED=1
 fi
 
-# Test 8: every SPA deep link is an S3 403 rewritten to index.html, so this is
-# most real page views. CloudFront does not apply the matched behavior's policy
-# to error responses but does apply the default behavior's -- true as of the
-# 2026-09 staging deploy, and undocumented by AWS, so it is pinned rather than
-# assumed. A failure here means error responses stopped inheriting headers.
+# Test 8: every SPA deep link is served as index.html by the routing function,
+# so this is most real page views.
 echo -n "Test: headers reach SPA deep links... "
 SEC_MISSING=""
 DEEP_HEADERS=$(curl "${CURL_OPTS[@]}" -I "https://$DOMAIN/2024/01-01/nonexistent" | tr -d '\r')
@@ -180,6 +191,59 @@ if [ -z "$SEC_MISSING" ]; then
     echo -e "${GREEN}PASS${NC}"
 else
     echo -e "${RED}FAIL (missing:$SEC_MISSING)${NC}"
+    FAILED=1
+fi
+
+# Test 9: the API is served on this domain. The root album is JSON, from the
+# API rather than the app, and it went through CloudFront's cache logic.
+echo -n "Test: /api/album is the API... "
+API_HEADERS=$(curl "${CURL_OPTS[@]}" -D - -o /dev/null "https://$DOMAIN/api/album" | tr -d '\r')
+API_STATUS=$(echo "$API_HEADERS" | grep -oE '^HTTP/[0-9.]+ [0-9]+' | tail -1 | awk '{print $2}')
+if [ "$API_STATUS" != "200" ]; then
+    echo -e "${RED}FAIL (got $API_STATUS)${NC}"
+    FAILED=1
+elif ! echo "$API_HEADERS" | grep -qiE '^content-type:.*application/json'; then
+    echo -e "${RED}FAIL (not JSON)${NC}"
+    FAILED=1
+elif ! echo "$API_HEADERS" | grep -qiE '^x-cache:'; then
+    echo -e "${RED}FAIL (no x-cache header)${NC}"
+    FAILED=1
+else
+    echo -e "${GREEN}PASS${NC}"
+fi
+
+# Test 9b: where albums are cached, the cache serves them. The root album is
+# the one every visit asks for, so it is versioned and cached within a few
+# requests of any deploy; three tries cover the store's propagation. Where the
+# environment serves albums uncached the API says no-store, and this is moot.
+if echo "$API_HEADERS" | grep -qiE '^cache-control:.*public'; then
+    echo -n "Test: the root album is served from the edge cache... "
+    HIT=""
+    for _ in 1 2 3; do
+        if curl "${CURL_OPTS[@]}" -D - -o /dev/null "https://$DOMAIN/api/album" | grep -qiE '^x-cache:.*hit'; then
+            HIT=1
+            break
+        fi
+        sleep 3
+    done
+    if [ -n "$HIT" ]; then
+        echo -e "${GREEN}PASS${NC}"
+    else
+        echo -e "${RED}FAIL (no hit in three tries)${NC}"
+        FAILED=1
+    fi
+fi
+
+# Test 10: an unknown API path is the API's error, not the app. Without the
+# routing function's allowlist doing its job, or with a distribution-wide
+# error mapping, this would come back as index.html with a 200.
+echo -n "Test: an unknown API path is answered by the API... "
+API_404=$(curl "${CURL_OPTS[@]}" -D - -o /dev/null "https://$DOMAIN/api/no-such-endpoint" | tr -d '\r')
+API_404_STATUS=$(echo "$API_404" | grep -oE '^HTTP/[0-9.]+ [0-9]+' | tail -1 | awk '{print $2}')
+if { [ "$API_404_STATUS" = "403" ] || [ "$API_404_STATUS" = "404" ]; } && ! echo "$API_404" | grep -qiE '^content-type:.*text/html'; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL (expected the API's 403/404, got '$API_404_STATUS')${NC}"
     FAILED=1
 fi
 

@@ -41,6 +41,8 @@ capabilities = "CAPABILITY_IAM"
 parameter_overrides = [
     "GalleryAppDomain=staging-pix.tacocat.com",
     "DomainCertificateArn=arn:aws:acm:us-east-1:010410881828:certificate/092ab57c-f87d-4c44-a72c-63cfbbb55800",
+    "GalleryApiStackName=tacocat-gallery-sam-dev",
+    "CacheAlbumResponses=true",
 ]
 
 [prod.deploy.parameters]
@@ -54,4 +56,6 @@ capabilities = "CAPABILITY_IAM"
 parameter_overrides = [
     "GalleryAppDomain=pix.tacocat.com",
     "DomainCertificateArn=arn:aws:acm:us-east-1:010410881828:certificate/e142cda0-96db-4651-92fd-35dd9a52e9a2",
+    "GalleryApiStackName=tacocat-gallery-sam-prod",
+    "CacheAlbumResponses=false", # promote by flipping this once staging has proven it
 ]
