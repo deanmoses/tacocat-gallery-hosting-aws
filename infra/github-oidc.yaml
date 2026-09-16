@@ -56,6 +56,10 @@ Parameters:
         Type: String
         Default: tacocat-gallery-website-hosting
         Description: Prefix of the hosting stack names, which are the prefix followed by -dev or -prod. Also the s3_prefix samconfig.toml uploads artifacts under, followed by /dev or /prod.
+    ClaudeCodeCloudUserName:
+        Type: String
+        Default: tacocat-gallery-claude-code-cloud
+        Description: The IAM user a Claude Code on the web session authenticates as. The tacocat-gallery-sam repo's cicd stack creates it, so that stack has to exist before this one deploys; here it is only attached to.
     SamArtifactBucket:
         Type: String
         Default: aws-sam-cli-managed-default-samclisourcebucket-7tmt1e3o0r12
@@ -202,6 +206,8 @@ Resources:
             # cannot reuse the name, so bump the name whenever the text changes
             ManagedPolicyName: tacocat-gallery-website-hosting-cicd-sam-plumbing
             Description: Find and list the SAM artifact bucket, inspect templates, and expand the SAM transform
+            Users:
+                - !Ref ClaudeCodeCloudUserName
             PolicyDocument:
                 Version: '2012-10-17'
                 Statement:
@@ -388,6 +394,84 @@ Resources:
                                 - cloudformation:GetTemplate
                                 - cloudformation:ListStackResources
                             Resource: !Sub arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${StackPrefix}-prod/*
+
+    # ---------------------------------------------------------------------------
+    # Claude Code on the web: deploy dev and read the access logs, the same reach
+    # the main branch's CI role has plus the logs no CI job needs. The user itself
+    # is created by the tacocat-gallery-sam repo, because a cloud session presents
+    # one credential for the whole account and so can only have one user; what
+    # that user may do *here* is this repo's to decide, and lives in this file.
+    # ---------------------------------------------------------------------------
+    ClaudeCodeCloudPolicy:
+        Type: AWS::IAM::ManagedPolicy
+        Properties:
+            # A changed Description replaces the policy, and a replacement
+            # cannot reuse the name, so bump the name whenever the text changes
+            ManagedPolicyName: tacocat-gallery-website-hosting-claude-code-cloud
+            Description: Deploy the dev stack and read both environments' CloudFront access logs from a Claude Code on the web session
+            Users:
+                - !Ref ClaudeCodeCloudUserName
+            PolicyDocument:
+                Version: '2012-10-17'
+                Statement:
+                    - Sid: DevArtifacts
+                      Effect: Allow
+                      Action:
+                          - s3:GetObject
+                          - s3:PutObject
+                      Resource: !Sub arn:aws:s3:::${SamArtifactBucket}/${StackPrefix}/dev/*
+                    - Sid: HandCloudFormationTheDevRole
+                      Effect: Allow
+                      Action: iam:PassRole
+                      Resource: !GetAtt CloudFormationDeployRoleDev.Arn
+                      Condition:
+                          StringEquals:
+                              iam:PassedToService: cloudformation.amazonaws.com
+                    - Sid: DevStack
+                      Effect: Allow
+                      Action:
+                          - cloudformation:CreateChangeSet
+                          - cloudformation:DescribeChangeSet
+                          - cloudformation:ExecuteChangeSet
+                          - cloudformation:DeleteChangeSet
+                          - cloudformation:DescribeStacks
+                          - cloudformation:DescribeStackEvents
+                          - cloudformation:DescribeStackResources
+                          - cloudformation:GetTemplate
+                          - cloudformation:ListStackResources
+                      Resource: !Sub arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${StackPrefix}-dev/*
+                    - Sid: ReadAccessLogs
+                      # CloudFront delivers to S3 rather than a log group, one gzipped
+                      # file per batch. Reading prod is the point: an incident is the
+                      # moment you most want the logs, and reading them changes nothing.
+                      Effect: Allow
+                      Action:
+                          - s3:GetObject
+                          - s3:ListBucket
+                      Resource:
+                          - !Sub arn:aws:s3:::${StackPrefix}-dev-cloudfront-logs
+                          - !Sub arn:aws:s3:::${StackPrefix}-dev-cloudfront-logs/*
+                          - !Sub arn:aws:s3:::${StackPrefix}-prod-cloudfront-logs
+                          - !Sub arn:aws:s3:::${StackPrefix}-prod-cloudfront-logs/*
+                    - Sid: SeeWhetherLoggingIsOn
+                      # Logging configured through delivery resources reports as disabled
+                      # in get-distribution-config and in the console, so these are the
+                      # only way to tell whether logs are flowing. None return log
+                      # content, and neither takes a resource, so the wildcard is forced.
+                      Effect: Allow
+                      Action:
+                          - logs:DescribeDeliverySources
+                          - logs:DescribeDeliveryDestinations
+                          - logs:DescribeDeliveries
+                      Resource: '*'
+                    - Sid: NeverProd
+                      # Reading prod's access logs is granted above; changing prod is
+                      # not, and nothing else here grants it either. This is so that a
+                      # later widening of a shared policy cannot quietly hand production
+                      # to a credential that sits in a cloud environment.
+                      Effect: Deny
+                      Action: cloudformation:*
+                      Resource: !Sub arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${StackPrefix}-prod/*
 
 Outputs:
     CloudFormationDeployRoleDevArn:
