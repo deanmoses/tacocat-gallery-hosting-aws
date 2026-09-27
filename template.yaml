@@ -136,6 +136,58 @@ Resources:
         Comment: "Serves robots.txt; crawling allowed so the noindex is seen"
         Runtime: cloudfront-js-2.0
 
+  # A day album's page and a photo's name the album JSON their JS will fetch
+  # in a Link: rel=preload header, so the browser starts that request when the
+  # page's headers arrive rather than once the app has loaded and run.
+  #
+  # The request side serves those pages index.html directly. Left to the SPA's
+  # 403-to-index.html error response, the response side would never run: no
+  # viewer response function runs when the origin answers 400 or higher.
+  AlbumPageFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: !Sub ${AWS::StackName}-album-page-handler
+      AutoPublish: true
+      # Must be inline; CloudFormation can't reference an external file.
+      FunctionCode: |
+        // /2001/12-31, /2001/12-31/ and /2001/12-31/felix.jpg, as the app's
+        // routes match them. A year's page is left out: a reader arrives from
+        // the email at a day album or a photo.
+        var ALBUM_PAGE = /^\/(\d{4})\/(\d\d-\d\d)(\/|\/[^\/.]+\.[^\/.]+)?$/;
+
+        // The page's own path, for the response side. AWS does not document
+        // whether that side sees the request before or after the rewrite to
+        // /index.html, so the path travels in a header as well as the URI.
+        var PAGE_HEADER = 'x-album-page';
+
+        function handler(event) {
+          var request = event.request;
+
+          if (event.context.eventType === 'viewer-request') {
+            delete request.headers[PAGE_HEADER];
+            if (ALBUM_PAGE.test(request.uri)) {
+              request.headers[PAGE_HEADER] = { value: request.uri };
+              request.uri = '/index.html';
+            }
+            return request;
+          }
+
+          var response = event.response;
+          var page = request.headers[PAGE_HEADER];
+          var match = ALBUM_PAGE.exec(page ? page.value : request.uri);
+          if (match) {
+            // The app fetches from api. on its own host, with credentials, and
+            // a browser hands a preload only to a fetch with the same URL,
+            // mode and credentials; anything else fetches the album twice.
+            var album = 'https://api.' + request.headers.host.value + '/album/' + match[1] + '/' + match[2] + '/';
+            response.headers.link = { value: '<' + album + '>; rel=preload; as=fetch; crossorigin=use-credentials' };
+          }
+          return response;
+        }
+      FunctionConfig:
+        Comment: "Serves album pages index.html with a preload of their JSON"
+        Runtime: cloudfront-js-2.0
+
   # -----------------------------------------------------------------------------
   # S3 bucket to host single page app (SPA) website
   # -----------------------------------------------------------------------------
@@ -282,6 +334,11 @@ Resources:
           CachedMethods:
           - GET
           - HEAD
+          FunctionAssociations:
+            - EventType: viewer-request
+              FunctionARN: !GetAtt AlbumPageFunction.FunctionMetadata.FunctionARN
+            - EventType: viewer-response
+              FunctionARN: !GetAtt AlbumPageFunction.FunctionMetadata.FunctionARN
 
   CloudFrontOriginAccessControl:
     Type: AWS::CloudFront::OriginAccessControl
