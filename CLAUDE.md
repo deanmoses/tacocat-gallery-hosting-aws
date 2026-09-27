@@ -25,6 +25,7 @@ sam sync            # Deploys to dev / staging (hosts the files of staging-pix.t
 - CloudFront distribution serves content with HTTPS
 - Origin Access Control (OAC) restricts S3 access to CloudFront only
 - Custom error responses return index.html for SPA routing (404/403 → 200 with index.html)
+- A CloudFront Function serves day album and photo pages index.html directly and adds a `Link: rel=preload` for the album's JSON, so the browser fetches it as the page's headers arrive. It rewrites the request rather than relying on the error response because no viewer response function runs when the origin answers 400 or higher
 - Access logs delivered to a dedicated S3 bucket, expiring after 90 days (see Observability)
 - `X-Robots-Tag` and `tdm-reservation` response headers opt out of indexing and AI training
 - HSTS (1 year, `includeSubDomains`, no preload), `nosniff`, `Referrer-Policy`, `X-Frame-Options: DENY` and `Permissions-Policy`. `includeSubDomains` binds `img.`/`api.`/`auth.` — a new subdomain must be HTTPS from day one
@@ -33,7 +34,7 @@ sam sync            # Deploys to dev / staging (hosts the files of staging-pix.t
 
 - `/_app/immutable/*`: 1-year cache with immutable headers (SvelteKit build output)
 - `/robots.txt`: Served by CloudFront Function
-- Default: Standard CloudFront caching
+- Default: Standard CloudFront caching, with the album page function on viewer request and viewer response
 
 ### Environments
 
@@ -42,7 +43,7 @@ sam sync            # Deploys to dev / staging (hosts the files of staging-pix.t
 
 ## Key Files
 
-- `template.yaml` - All AWS resources (S3, CloudFront, policies, inline CloudFront Function for robots.txt, access log delivery)
+- `template.yaml` - All AWS resources (S3, CloudFront, policies, inline CloudFront Functions for robots.txt and album pages, access log delivery)
 - `samconfig.toml` - SAM CLI config with dev/prod parameters
 - `infra/github-oidc.yaml` - IAM roles CI assumes and the per-environment CloudFormation service roles that deploy the stacks. Deployed by hand, see `infra/README.md`
 

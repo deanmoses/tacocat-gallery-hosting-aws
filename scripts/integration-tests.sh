@@ -183,6 +183,42 @@ else
     FAILED=1
 fi
 
+# Test 9: a day album's page and a photo's name their album's JSON as a
+# preload. The URL and crossorigin must match the app's own fetch exactly, or
+# the browser fetches the album twice.
+echo -n "Test: album pages preload their JSON... "
+PRELOAD_ISSUES=""
+PRELOAD="<https://api.$DOMAIN/album/2024/01-01/>; rel=preload; as=fetch; crossorigin=use-credentials"
+for path in /2024/01-01 /2024/01-01/ /2024/01-01/felix.jpg; do
+    PAGE_HEADERS=$(curl "${CURL_OPTS[@]}" -I "https://$DOMAIN$path" | tr -d '\r')
+    LINK=$(echo "$PAGE_HEADERS" | grep -iE '^link:' | sed -E 's/^[Ll]ink:[[:space:]]*//')
+    [ "$LINK" = "$PRELOAD" ] || PRELOAD_ISSUES="$PRELOAD_ISSUES $path/link($LINK)"
+    echo "$PAGE_HEADERS" | grep -qE '^HTTP/[0-9.]+ 200' || PRELOAD_ISSUES="$PRELOAD_ISSUES $path/status"
+    # Served index.html from the request side, not from the error response.
+    echo "$PAGE_HEADERS" | grep -qiE '^x-cache:.*error' && PRELOAD_ISSUES="$PRELOAD_ISSUES $path/error-response"
+done
+PAGE=$(curl "${CURL_OPTS[@]}" "https://$DOMAIN/2024/01-01/felix.jpg")
+echo "$PAGE" | grep -q '/_app/immutable/' || PRELOAD_ISSUES="$PRELOAD_ISSUES body-not-the-app"
+if [ -z "$PRELOAD_ISSUES" ]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL (issues:$PRELOAD_ISSUES)${NC}"
+    FAILED=1
+fi
+
+# Test 10: pages with no album to preload carry no Link.
+echo -n "Test: other pages preload nothing... "
+PRELOAD_ISSUES=""
+for path in / /2024 /2024/ /search/tacos /robots.txt /2024/01-01/nonexistent; do
+    curl "${CURL_OPTS[@]}" -I "https://$DOMAIN$path" | grep -qiE '^link:' && PRELOAD_ISSUES="$PRELOAD_ISSUES $path"
+done
+if [ -z "$PRELOAD_ISSUES" ]; then
+    echo -e "${GREEN}PASS${NC}"
+else
+    echo -e "${RED}FAIL (Link on:$PRELOAD_ISSUES)${NC}"
+    FAILED=1
+fi
+
 echo "================================================="
 if [ "$FAILED" = "1" ]; then
     echo -e "${RED}Some tests FAILED${NC}"
