@@ -1,8 +1,10 @@
 # tacocat-gallery-hosting-aws
 
+> **Archived.** This repo defined the S3 bucket and CloudFront distribution that served the [pix.tacocat.com](https://pix.tacocat.com) web app on AWS from December 2023 to October 2026. On 2026-10-02 the gallery moved to Cloudflare and now lives in [tacocat-gallery-cloudflare](https://github.com/deanmoses/tacocat-gallery-cloudflare), where the app is served as a Worker's static assets and there is no separate hosting stack. Nothing here deploys any more; the stacks are out of service and being torn down. The last production release was `2026v7`, which is what `main` holds.
+
 This defines the hosting infrastructure for the static files of the Tacocat photo gallery website single page application (SPA) on AWS.
 
-It does NOT contain the actual website itself.  That's a separate project that deploys its contents to this infrastructure.
+It does NOT contain the actual website itself. That's a separate project that deploys its contents to this infrastructure.
 
 ## Key services
 
@@ -12,7 +14,7 @@ CloudFront writes access logs to a second S3 bucket, `<stack-name>-cloudfront-lo
 
 ## SAM
 
-This project uses the Amazon AWS Serverless Application Model (SAM).  You can see all the assets defined in the standard `template.yaml` file.  It's a little weird to use SAM because there's no code, no lambdas.  I'm using it because every other project in the system uses SAM, it's easier to make them all similar.
+This project uses the Amazon AWS Serverless Application Model (SAM). You can see all the assets defined in the standard `template.yaml` file. It's a little weird to use SAM because there's no code, no lambdas. I'm using it because every other project in the system uses SAM, it's easier to make them all similar.
 
 ## Prerequisites
 
@@ -41,7 +43,7 @@ sam build           # Transform the template
 
 ## Deploying to dev
 
-Dev/staging hosts the files of <https://staging-pix.tacocat.com>.  
+Dev/staging hosts the files of <https://staging-pix.tacocat.com>.
 
 To deploy:
 
@@ -76,7 +78,7 @@ You must submit a PR to change main.
 
 Prod hosts the files of <https://pix.tacocat.com>
 
-- Use the `Deploy to Production` GitHub Action to deploy to prod.  This will:
+- Use the `Deploy to Production` GitHub Action to deploy to prod. This will:
   - Deploy to prod
   - Run integration tests
   - Create a release tag and release on GitHub
